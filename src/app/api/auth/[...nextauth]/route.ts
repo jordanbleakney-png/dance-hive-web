@@ -1,7 +1,7 @@
 import NextAuth, { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
-import { connectMongoClient } from "@/lib/dbConnect";
+import clientPromise from "@/lib/dbConnect"; // ✅ fixed import
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -14,74 +14,48 @@ export const authOptions: NextAuthOptions = {
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) return null;
 
-        const client = await connectMongoClient();
-        const db = client.db("danceHive");
+        try {
+          // ✅ Use shared MongoDB connection
+          const client = await clientPromise;
+          const db = client.db("danceHive");
 
-        const user = await db
-          .collection("users")
-          .findOne({ email: credentials.email });
-        if (!user) return null;
+          // Look up user
+          const user = await db.collection("users").findOne({
+            email: credentials.email,
+          });
 
-        const isValid = await bcrypt.compare(
-          credentials.password,
-          user.password
-        );
-        if (!isValid) return null;
+          if (!user) return null;
 
-        return {
-          id: user._id.toString(),
-          name: user.parentName || user.childName || "User",
-          email: user.email,
-          role: user.role || "customer",
-          membership: user.membership || null,
-        };
+          // Validate password
+          const isValid = await bcrypt.compare(
+            credentials.password,
+            user.password
+          );
+
+          if (!isValid) return null;
+
+          // Return user data (excluding password)
+          return {
+            id: user._id.toString(),
+            name: user.name || "User",
+            email: user.email,
+          };
+        } catch (error) {
+          console.error("❌ Error in authorize:", error);
+          return null;
+        }
       },
     }),
   ],
-
-  // 🧠 This is the critical part — keeps the session in sync with MongoDB
-  callbacks: {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    async session({ session, token }) {
-      if (!session?.user?.email) return session;
-
-      try {
-        const client = await connectMongoClient();
-        const db = client.db("danceHive");
-        const user = await db
-          .collection("users")
-          .findOne({ email: session.user.email });
-
-        if (user) {
-          session.user.role = user.role || "customer";
-          session.user.membership = user.membership || null;
-        }
-      } catch (error) {
-        console.error("⚠️ Error refreshing session:", error);
-      }
-
-      return session;
-    },
-
-    async jwt({ token, user }) {
-      if (user) {
-        token.role = user.role;
-        token.membership = user.membership;
-      }
-      return token;
-    },
-  },
-
   pages: {
     signIn: "/login",
   },
-
   session: {
     strategy: "jwt",
   },
-
   secret: process.env.NEXTAUTH_SECRET,
 };
 
 const handler = NextAuth(authOptions);
+
 export { handler as GET, handler as POST };

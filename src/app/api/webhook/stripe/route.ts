@@ -1,166 +1,162 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { getDb } from "@/lib/dbConnect";
+import { wasProcessed } from "@/lib/idempotency";
+import { getEmailFromStripe } from "@/lib/stripeEmail";
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+  apiVersion: "2025-09-30.clover" as Stripe.LatestApiVersion,
+});
 
-export async function POST(req: Request) {
-  const sig = req.headers.get("stripe-signature")!;
+export async function POST(req: Request): Promise<Response> {
+  const sig = req.headers.get("stripe-signature");
   const body = await req.text();
 
   let event: Stripe.Event;
 
   try {
+    if (!sig) {
+      console.error("❌ Missing Stripe signature");
+      return new NextResponse("Missing signature", { status: 400 });
+    }
+
     event = stripe.webhooks.constructEvent(
       body,
       sig,
       process.env.STRIPE_WEBHOOK_SECRET!
     );
   } catch (err: unknown) {
-    const message =
-      err instanceof Error ? err.message : "Unknown Stripe verification error";
+    const message = err instanceof Error ? err.message : "Unknown error";
     console.error("❌ Stripe signature verification failed:", message);
     return new NextResponse(`Webhook Error: ${message}`, { status: 400 });
   }
 
   const db = await getDb();
 
+  // 🧠 Idempotency check (avoid duplicate handling)
+  const alreadyProcessed = await wasProcessed(event.id);
+  if (alreadyProcessed) {
+    console.log(`⚠️ Event ${event.id} already processed — skipping`);
+    return new NextResponse("Event already processed", { status: 200 });
+  }
+
+  const email = getEmailFromStripe(event);
+  if (!email) {
+    console.warn(`⚠️ Could not extract email from event ${event.type}`);
+    return new NextResponse("Missing email", { status: 200 });
+  }
+
   try {
     switch (event.type) {
-      // ✅ 1️⃣ Payment success (trial → member)
+      // ✅ Checkout completed — convert trial → user
       case "checkout.session.completed": {
         const session = event.data.object as Stripe.Checkout.Session;
-        const email = session.customer_email?.toLowerCase();
-        if (!email) break;
 
-        // Check if user exists in trialBookings
         const trial = await db.collection("trialBookings").findOne({ email });
-        if (!trial) {
-          console.warn("⚠️ No trial booking found for:", email);
-          break;
-        }
 
-        // Create or update user record
-        const newUser = {
-          name: trial.name || "User",
-          email,
-          role: "member",
-          membership: {
-            status: "active",
-            plan: "standard",
-            startedAt: new Date(),
-            updatedAt: new Date(),
-            lastPaymentDate: new Date(),
-          },
-          createdAt: new Date(),
-        };
+        if (trial) {
+          // Mark trial as converted instead of deleting
+          await db
+            .collection("trialBookings")
+            .updateOne(
+              { email },
+              { $set: { status: "converted", convertedAt: new Date() } }
+            );
 
-        await db
-          .collection("users")
-          .updateOne({ email }, { $set: newUser }, { upsert: true });
-
-        // Mark trial as converted
-        await db
-          .collection("trialBookings")
-          .updateOne(
+          // Upsert user (copy relevant fields)
+          await db.collection("users").updateOne(
             { email },
-            { $set: { convertedToMember: true, convertedAt: new Date() } }
+            {
+              $setOnInsert: {
+                createdAt: new Date(),
+                joinedFromTrial: true,
+              },
+              $set: {
+                name: trial.name,
+                studentName: trial.studentName || "",
+                phone: trial.phone || "",
+                classType: trial.classType || "",
+                role: "member",
+                membership: {
+                  status: "active",
+                  plan: "monthly",
+                  joinedAt: new Date(),
+                },
+                updatedAt: new Date(),
+              },
+            },
+            { upsert: true }
           );
 
-        // Log conversion
-        await db.collection("membershipHistory").insertOne({
-          email,
-          event: "converted_to_member",
-          source: "checkout.session.completed",
-          plan: "standard",
-          timestamp: new Date(),
-          details: {
-            amount_total: session.amount_total,
-            payment_intent: session.payment_intent,
-          },
-        });
+          await db.collection("membershipHistory").insertOne({
+            email,
+            event: "converted",
+            timestamp: new Date(),
+            details: {
+              source: "stripe_checkout",
+              sessionId: session.id,
+            },
+          });
 
-        console.log(`✅ ${email} converted to member and logged`);
+          console.log(`✅ Trial migrated to member: ${email}`);
+        } else {
+          // Existing user with no trial
+          await db.collection("users").updateOne(
+            { email },
+            {
+              $set: {
+                "membership.status": "active",
+                "membership.joinedAt": new Date(),
+              },
+            },
+            { upsert: true }
+          );
+
+          await db.collection("membershipHistory").insertOne({
+            email,
+            event: "new_checkout_member",
+            timestamp: new Date(),
+          });
+
+          console.log(`✅ User activated: ${email}`);
+        }
+
         break;
       }
 
-      // ✅ 2️⃣ Subscription renewal (monthly payment)
+      // ✅ Invoice succeeded — renewal
       case "invoice.payment_succeeded": {
         const invoice = event.data.object as Stripe.Invoice;
 
-        const customerId =
-          typeof invoice.customer === "string"
-            ? invoice.customer
-            : invoice.customer?.id;
-        if (!customerId) break;
-
-        // Fetch customer to get email
-        const customer = await stripe.customers.retrieve(customerId);
-        const email = (customer as Stripe.Customer).email?.toLowerCase();
-        if (!email) break;
-
-        // Update user's last payment info
         await db.collection("users").updateOne(
           { email },
           {
             $set: {
               "membership.status": "active",
               "membership.lastPaymentDate": new Date(),
-              "membership.updatedAt": new Date(),
             },
           }
         );
 
-        // ✅ Safely type extended invoice
-        const invoiceWithIntent = invoice as Stripe.Invoice & {
-          payment_intent?: string;
-        };
-        const paymentIntentId = invoiceWithIntent.payment_intent ?? null;
-
-        // Log renewal
         await db.collection("membershipHistory").insertOne({
           email,
           event: "payment_renewal",
-          source: "invoice.payment_succeeded",
           timestamp: new Date(),
           details: {
             invoiceId: invoice.id,
             amount_paid: invoice.amount_paid,
             currency: invoice.currency,
-            payment_intent: paymentIntentId,
           },
         });
 
-        console.log(`💰 Renewal payment logged for ${email}`);
+        console.log(`💰 Payment renewed for ${email}`);
         break;
       }
 
-      // ✅ 3️⃣ Subscription canceled
+      // ✅ Subscription canceled
       case "customer.subscription.deleted": {
-        const sub = event.data.object as Stripe.Subscription;
-
-        const customerId =
-          typeof sub.customer === "string" ? sub.customer : sub.customer?.id;
-        if (!customerId) {
-          console.warn("⚠️ No customer ID found in subscription deleted event");
-          break;
-        }
-
-        // Fetch customer to get email
-        const customer = await stripe.customers.retrieve(customerId);
-        const customerEmail =
-          (customer as Stripe.Customer).email?.toLowerCase() ?? null;
-        if (!customerEmail) {
-          console.warn(
-            "⚠️ No email found for canceled subscription:",
-            customerId
-          );
-          break;
-        }
-
-        // Update membership
         await db.collection("users").updateOne(
-          { email: customerEmail },
+          { email },
           {
             $set: {
               "membership.status": "canceled",
@@ -169,30 +165,24 @@ export async function POST(req: Request) {
           }
         );
 
-        // Log cancellation
         await db.collection("membershipHistory").insertOne({
-          email: customerEmail,
+          email,
           event: "subscription_canceled",
-          source: "customer.subscription.deleted",
           timestamp: new Date(),
-          details: {
-            subscriptionId: sub.id,
-            cancel_at_period_end: sub.cancel_at_period_end,
-          },
         });
 
-        console.log(`⚠️ Subscription canceled for ${customerEmail}`);
+        console.log(`⚠️ Subscription canceled for ${email}`);
         break;
       }
 
       default:
-        // Ignore unrelated events
+        // No spam logs for unhandled events
         break;
     }
 
     return new NextResponse("OK", { status: 200 });
-  } catch (error) {
-    console.error("❌ Webhook handler error:", error);
+  } catch (error: unknown) {
+    console.error("💥 Webhook handler error:", error);
     return new NextResponse("Internal Server Error", { status: 500 });
   }
 }
