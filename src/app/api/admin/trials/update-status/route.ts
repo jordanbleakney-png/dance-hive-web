@@ -5,10 +5,9 @@ import bcrypt from "bcryptjs";
 
 const uri = process.env.MONGODB_URI;
 
-export async function PATCH(req) {
+export async function PATCH(req: Request) {
   try {
     const session = await getServerSession(authOptions);
-    console.log("🧠 DEBUG SESSION:", session);
 
     // 🔒 Must be admin
     if (!session?.user || session.user.role !== "admin") {
@@ -31,29 +30,26 @@ export async function PATCH(req) {
     await client.connect();
     const db = client.db("danceHive");
 
-    // ✅ Update the trial safely
+    // ✅ Update trial record
     const updateResult = await db
       .collection("trialBookings")
       .updateOne({ _id: new ObjectId(id) }, { $set: { status } });
 
     if (updateResult.matchedCount === 0) {
+      await client.close();
       return new Response(JSON.stringify({ error: "Trial not found" }), {
         status: 404,
       });
     }
 
-    // 🧩 Fetch the updated trial
     const updatedTrial = await db
       .collection("trialBookings")
       .findOne({ _id: new ObjectId(id) });
-
     console.log("✅ Trial updated:", id, "→", status);
 
-    // 🧩 If converted → create user + booking
-    if (status === "converted") {
+    // 🧩 If converted → create user as "customer" ready for payment
+    if (status === "converted" && updatedTrial) {
       const t = updatedTrial;
-
-      // Check if user already exists
       const existingUser = await db
         .collection("users")
         .findOne({ email: t.email });
@@ -66,36 +62,22 @@ export async function PATCH(req) {
           parentPhone: t.parentPhone,
           childName: t.childName,
           childAge: t.childAge,
-          role: "customer",
+          role: "customer", // ✅ not member yet
           membership: {
-            status: "active",
-            price: 30,
-            classId: t.classId,
-            startDate: new Date(),
+            status: "pending",
+            plan: null,
+            startDate: null,
           },
           password: hashedPassword,
           createdAt: new Date(),
         });
+        console.log(`👤 Created new customer: ${t.email}`);
       }
-
-      // Create booking record
-      await db.collection("bookings").insertOne({
-        classId: t.classId,
-        email: t.email,
-        childName: t.childName,
-        status: "member",
-        createdAt: new Date(),
-      });
     }
 
     await client.close();
-
-    // ✅ Success response
     return new Response(
-      JSON.stringify({
-        message: `Trial updated to "${status}"`,
-        trial: updatedTrial,
-      }),
+      JSON.stringify({ message: `Trial updated to "${status}"` }),
       { status: 200 }
     );
   } catch (err) {

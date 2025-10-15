@@ -1,8 +1,9 @@
 import { MongoClient } from "mongodb";
 
-const uri = process.env.MONGODB_URI;
+const uri = process.env.MONGODB_URI as string;
 
-export async function GET(req) {
+// ✅ GET /api/users/status?email=user@email.com
+export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const email = searchParams.get("email");
@@ -17,8 +18,9 @@ export async function GET(req) {
     await client.connect();
     const db = client.db("danceHive");
 
+    // ✅ Find user by email (case-insensitive)
     const user = await db.collection("users").findOne({
-      $or: [{ email }, { email: email }],
+      email: { $regex: new RegExp(`^${email}$`, "i") },
     });
 
     await client.close();
@@ -29,11 +31,17 @@ export async function GET(req) {
       });
     }
 
+    // ✅ Return consistent structure for dashboard
     return new Response(
       JSON.stringify({
         email: user.email,
-        role: user.role,
-        membershipStatus: user.membership?.status || "none",
+        role: user.role || "customer",
+        membership: {
+          status: user.membership?.status || "inactive",
+          plan: user.membership?.plan || "none",
+          updatedAt: user.membership?.updatedAt || null,
+          lastPaymentDate: user.membership?.lastPaymentDate || null,
+        },
       }),
       { status: 200 }
     );
