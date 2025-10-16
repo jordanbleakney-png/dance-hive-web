@@ -1,62 +1,87 @@
-import { NextRequest, NextResponse } from "next/server";
-import { connectMongoClient } from "@/lib/dbConnect";
-import { ObjectId } from "mongodb";
+import { NextResponse } from "next/server";
+import { z, ZodError } from "zod";
+import { getDb } from "@/lib/dbConnect";
 
-export async function POST(req: NextRequest) {
+// 🧩 Flexible schema to accept either frontend naming style
+const trialSchema = z.object({
+  childName: z.string().min(2, "Child's name is required"),
+  childAge: z.union([
+    z.string().min(1, "Child's age is required"),
+    z.number().min(1, "Child's age is required"),
+  ]),
+  parentName: z.string().min(2, "Parent's name is required"),
+  email: z.string().email("Invalid email format"),
+  phone: z
+    .string()
+    .min(8, "Phone number must be at least 8 digits")
+    .or(z.string().optional()), // allow missing if using parentPhone
+  parentPhone: z
+    .string()
+    .min(8, "Parent phone must be at least 8 digits")
+    .or(z.string().optional()),
+  classId: z
+    .string()
+    .min(2, "Class selection is required")
+    .or(z.string().optional()),
+  selectedClass: z.string().optional(),
+});
+
+// 🚀 POST — Create new trial booking
+export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { childName, childAge, parentName, email, parentPhone, classId } =
-      body;
 
-    // ✅ Validate fields from frontend form
-    if (
-      !childName ||
-      !childAge ||
-      !parentName ||
-      !email ||
-      !parentPhone ||
-      !classId
-    ) {
+    // 🧠 Normalize field names before validation
+    const normalized = {
+      childName: body.childName,
+      childAge: body.childAge,
+      parentName: body.parentName,
+      email: body.email,
+      phone: body.phone ?? body.parentPhone,
+      classId: body.classId ?? body.selectedClass,
+    };
+
+    const validated = trialSchema.parse(normalized);
+    const db = await getDb();
+
+    // 🕵️‍♂️ Prevent duplicate booking by same email + class
+    const existing = await db
+      .collection("trialBookings")
+      .findOne({ email: validated.email, classId: validated.classId });
+
+    if (existing) {
       return NextResponse.json(
-        { error: "Missing required fields" },
+        { success: false, message: "You’ve already booked this trial class." },
         { status: 400 }
       );
     }
 
-    // ✅ Connect to database
-    const client = await connectMongoClient();
-    const db = client.db("danceHive");
-
-    // ✅ Fetch class details (for display/reference)
-    const selectedClass = await db
-      .collection("classes")
-      .findOne({ _id: new ObjectId(classId) });
-
-    // ✅ Create the trial booking record
-    const result = await db.collection("trialBookings").insertOne({
-      childName,
-      childAge,
-      parentName,
-      email,
-      parentPhone,
-      classId,
-      className: selectedClass?.name || "Unknown Class",
-      classDay: selectedClass?.day || "",
-      classTime: selectedClass?.time || "",
-      createdAt: new Date(),
+    // 📝 Insert new booking
+    await db.collection("trialBookings").insertOne({
+      ...validated,
       status: "pending",
+      createdAt: new Date(),
     });
 
-    console.log("✅ New trial booking created:", result.insertedId);
+    console.log(`✅ Trial booked for ${validated.email}`);
 
     return NextResponse.json(
-      { message: "Trial booked successfully!", id: result.insertedId },
-      { status: 201 }
+      { success: true, message: "Trial booking successful!" },
+      { status: 200 }
     );
-  } catch (error) {
-    console.error("❌ Error creating trial booking:", error);
+  } catch (err) {
+    if (err instanceof ZodError) {
+      const messages = err.issues.map((i) => i.message).join(", ");
+      console.error("❌ Validation failed:", messages);
+      return NextResponse.json(
+        { success: false, message: messages },
+        { status: 400 }
+      );
+    }
+
+    console.error("💥 Error creating trial booking:", err);
     return NextResponse.json(
-      { error: "Failed to book trial" },
+      { success: false, message: "Internal Server Error" },
       { status: 500 }
     );
   }

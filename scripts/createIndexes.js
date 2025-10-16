@@ -2,7 +2,7 @@
 import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
-import { MongoClient } from "mongodb";
+import { getDb } from "@/lib/dbConnect";
 
 // Fix __dirname for ES modules
 const __filename = fileURLToPath(import.meta.url);

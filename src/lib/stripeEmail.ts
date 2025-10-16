@@ -1,20 +1,76 @@
-import type Stripe from "stripe";
+import Stripe from "stripe";
 
+/**
+ * Extracts a normalized (lowercased) email address from any Stripe event.
+ * Handles sessions, invoices, and subscriptions safely.
+ */
 export function getEmailFromStripe(event: Stripe.Event): string | null {
-  // Stripe.Event.data.object is a wide union, so we first cast to unknown
-  const data = event.data.object as unknown;
+  try {
+    let email: string | undefined;
 
-  // Narrow to partial types for common Stripe event objects
-  const session = data as Partial<Stripe.Checkout.Session>;
-  const invoice = data as Partial<Stripe.Invoice>;
-  const subscription = data as Partial<Stripe.Subscription>;
+    switch (event.type) {
+      case "checkout.session.completed":
+      case "checkout.session.async_payment_succeeded":
+      case "checkout.session.async_payment_failed": {
+        const session = event.data.object as Stripe.Checkout.Session;
+        email =
+          session.customer_details?.email ||
+          (session.metadata?.email as string | undefined);
+        break;
+      }
 
-  // Safely get an email from multiple possible Stripe sources
-  const email =
-    session?.customer_details?.email ??
-    invoice?.customer_email ??
-    (subscription?.metadata?.email as string | undefined) ??
-    null;
+      case "invoice.payment_succeeded":
+      case "invoice.payment_failed": {
+        const invoice = event.data.object as Stripe.Invoice;
+        email =
+          invoice.customer_email ||
+          (invoice.metadata?.email as string | undefined);
+        break;
+      }
 
-  return typeof email === "string" ? email.trim().toLowerCase() : null;
+      case "customer.subscription.created":
+      case "customer.subscription.updated":
+      case "customer.subscription.deleted": {
+        const sub = event.data.object as Stripe.Subscription;
+        email = sub.metadata?.email as string | undefined;
+        break;
+      }
+
+      default: {
+        const dataObj = event.data.object;
+
+        // 🧠 Helper type guard
+        const isPlainObject = (obj: unknown): obj is Record<string, unknown> =>
+          obj !== null && typeof obj === "object" && !Array.isArray(obj);
+
+        if (isPlainObject(dataObj)) {
+          const data = dataObj as Record<string, unknown>;
+
+          const maybeEmail =
+            (data["customer_email"] as string | undefined) ||
+            (isPlainObject(data["customer_details"]) &&
+              (data["customer_details"] as { email?: string }).email) ||
+            (isPlainObject(data["metadata"]) &&
+              (data["metadata"] as { email?: string }).email);
+
+          if (typeof maybeEmail === "string") {
+            email = maybeEmail;
+          }
+        }
+        break;
+      }
+    }
+
+    if (email) {
+      return email.toLowerCase().trim();
+    }
+
+    console.warn(
+      `⚠️ [getEmailFromStripe] No email found for event ${event.type}`
+    );
+    return null;
+  } catch (err) {
+    console.error("💥 [getEmailFromStripe] Error extracting email:", err);
+    return null;
+  }
 }

@@ -1,4 +1,4 @@
-import { MongoClient } from "mongodb";
+import { getDb } from "@/lib/dbConnect";
 import bcrypt from "bcrypt";
 
 // === CONFIG ===

@@ -1,6 +1,7 @@
 import Stripe from "stripe";
+import { getDb } from "@/lib/dbConnect"; // ✅ Shared MongoDB connection helper
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY); // ✅ create Stripe client
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY); // ✅ Stripe client
 
 export async function POST(req) {
   try {
@@ -10,6 +11,18 @@ export async function POST(req) {
       console.error("❌ Missing email in request body");
       return new Response(JSON.stringify({ error: "Missing email" }), {
         status: 400,
+      });
+    }
+
+    // ✅ Get shared database connection
+    const db = await getDb();
+
+    // ✅ Check if user exists before creating session
+    const user = await db.collection("users").findOne({ email });
+    if (!user) {
+      console.error("❌ User not found in database:", email);
+      return new Response(JSON.stringify({ error: "User not found" }), {
+        status: 404,
       });
     }
 
@@ -39,10 +52,9 @@ export async function POST(req) {
     });
 
     console.log("✅ Stripe checkout session created for:", email);
-
     return new Response(JSON.stringify({ url: session.url }), { status: 200 });
   } catch (error) {
-    console.error("❌ Stripe checkout session error:", error.message);
+    console.error("❌ Stripe checkout session error:", error);
     return new Response(JSON.stringify({ error: error.message }), {
       status: 500,
     });

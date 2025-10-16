@@ -1,89 +1,82 @@
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/app/api/auth/[...nextauth]/route";
-import { MongoClient, ObjectId } from "mongodb";
-import bcrypt from "bcryptjs";
-
-const uri = process.env.MONGODB_URI;
+import { NextResponse } from "next/server";
+import { ObjectId } from "mongodb";
+import { auth } from "@/app/api/auth/[...nextauth]/route";
+import { getDb } from "@/lib/dbConnect";
+import bcrypt from "bcryptjs"; // ✅ for password hashing
 
 export async function PATCH(req: Request) {
   try {
-    const session = await getServerSession(authOptions);
-
-    // 🔒 Must be admin
-    if (!session?.user || session.user.role !== "admin") {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-      });
+    // ✅ Authenticate admin
+    const session = await auth();
+    if (!session || session.user.role !== "admin") {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // 📦 Parse request
+    // ✅ Parse request body
     const { id, status } = await req.json();
     if (!id || !status) {
-      return new Response(
-        JSON.stringify({ error: "Missing trial ID or status" }),
+      return NextResponse.json(
+        { error: "Missing id or status" },
         { status: 400 }
       );
     }
 
-    // 🗃️ Connect to MongoDB
-    const client = new MongoClient(uri);
-    await client.connect();
-    const db = client.db("danceHive");
+    // ✅ Get DB connection
+    const db = await getDb();
 
-    // ✅ Update trial record
-    const updateResult = await db
-      .collection("trialBookings")
-      .updateOne({ _id: new ObjectId(id) }, { $set: { status } });
+    // ✅ Find trial first (we’ll need its data if status is "converted")
+    const trial = await db.collection("trialBookings").findOne({
+      _id: new ObjectId(id),
+    });
 
-    if (updateResult.matchedCount === 0) {
-      await client.close();
-      return new Response(JSON.stringify({ error: "Trial not found" }), {
-        status: 404,
-      });
+    if (!trial) {
+      return NextResponse.json({ error: "Trial not found" }, { status: 404 });
     }
 
-    const updatedTrial = await db
-      .collection("trialBookings")
-      .findOne({ _id: new ObjectId(id) });
-    console.log("✅ Trial updated:", id, "→", status);
+    // ✅ Update the trial booking status
+    await db.collection("trialBookings").updateOne(
+      { _id: new ObjectId(id) },
+      {
+        $set: {
+          status,
+          updatedAt: new Date(),
+        },
+      }
+    );
 
-    // 🧩 If converted → create user as "customer" ready for payment
-    if (status === "converted" && updatedTrial) {
-      const t = updatedTrial;
+    console.log(`✅ Updated trial ${id} → ${status}`);
+
+    // 🧩 If status is converted → auto-create a user account
+    if (status === "converted") {
       const existingUser = await db
         .collection("users")
-        .findOne({ email: t.email });
+        .findOne({ email: trial.email });
 
       if (!existingUser) {
-        const hashedPassword = await bcrypt.hash("dancehive123", 10); // temp password
+        const hashedPassword = await bcrypt.hash("dancehive123", 10);
+
         await db.collection("users").insertOne({
-          parentName: t.parentName,
-          email: t.email,
-          parentPhone: t.parentPhone,
-          childName: t.childName,
-          childAge: t.childAge,
-          role: "customer", // ✅ not member yet
-          membership: {
-            status: "pending",
-            plan: null,
-            startDate: null,
-          },
+          name: trial.parentName || trial.childName || "New User",
+          email: trial.email,
           password: hashedPassword,
+          role: "customer",
           createdAt: new Date(),
         });
-        console.log(`👤 Created new customer: ${t.email}`);
+
+        console.log(`✅ Created new user for ${trial.email}`);
+      } else {
+        console.log(
+          `ℹ️ User already exists for ${trial.email}, skipping creation`
+        );
       }
     }
 
-    await client.close();
-    return new Response(
-      JSON.stringify({ message: `Trial updated to "${status}"` }),
-      { status: 200 }
-    );
+    return NextResponse.json({ success: true, status }, { status: 200 });
   } catch (err) {
-    console.error("❌ Update trial error:", err);
-    return new Response(JSON.stringify({ error: "Internal server error" }), {
-      status: 500,
-    });
+    console.error("❌ Error updating trial status:", err);
+    return NextResponse.json(
+      { error: "Failed to update trial" },
+      { status: 500 }
+    );
   }
 }

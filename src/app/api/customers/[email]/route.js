@@ -1,13 +1,12 @@
-import { getServerSession } from "next-auth";
-import { authOptions } from "../../auth/[...nextauth]/route"; // ✅ correct path
-import { MongoClient } from "mongodb";
+import { auth } from "@/app/api/auth/[...nextauth]/route";
+import { getDb } from "@/lib/dbConnect";
 
 const uri = process.env.MONGODB_URI;
 
 export async function GET(req, context) {
   try {
     const params = await context.params; // ✅ await the params
-    const session = await getServerSession(authOptions);
+    const session = await auth();
 
     if (!session?.user?.role || session.user.role !== "admin") {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {

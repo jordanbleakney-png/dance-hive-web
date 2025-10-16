@@ -1,12 +1,9 @@
-import { getServerSession } from "next-auth";
-import { authOptions } from "../../auth/[...nextauth]/route";
-import { MongoClient } from "mongodb";
-
-const uri = process.env.MONGODB_URI;
+import { auth } from "@/app/api/auth/[...nextauth]/route";
+import { getDb } from "@/lib/dbConnect"; // ✅ shared DB connection
 
 export async function GET() {
   try {
-    const session = await getServerSession(authOptions);
+    const session = await auth();
 
     // 🔒 Ensure admin access
     if (!session?.user || session.user.role !== "admin") {
@@ -15,9 +12,8 @@ export async function GET() {
       });
     }
 
-    const client = new MongoClient(uri);
-    await client.connect();
-    const db = client.db("danceHive");
+    // ✅ Use shared database connection
+    const db = await getDb();
 
     // ✅ Fetch all payments
     const payments = await db
@@ -26,20 +22,17 @@ export async function GET() {
       .sort({ createdAt: -1 })
       .toArray();
 
-    // ✅ Auto repair & consistency
+    // ✅ Optional: data cleanup / repair
     for (const payment of payments) {
-      if (!payment.email && payment.email) {
+      if (!payment.email && payment.userEmail) {
         await db
           .collection("payments")
-          .updateOne({ _id: payment._id }, { $set: { email: payment.email } });
-      } else if (!payment.email && payment.email) {
-        await db
-          .collection("payments")
-          .updateOne({ _id: payment._id }, { $set: { email: payment.email } });
+          .updateOne(
+            { _id: payment._id },
+            { $set: { email: payment.userEmail } }
+          );
       }
     }
-
-    await client.close();
 
     return new Response(JSON.stringify({ payments }), {
       status: 200,

@@ -1,4 +1,4 @@
-import { MongoClient } from "mongodb";
+import { getDb } from "@/lib/dbConnect";
 import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";

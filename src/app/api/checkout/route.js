@@ -1,31 +1,33 @@
 import Stripe from "stripe";
-import { getServerSession } from "next-auth";
-import { authOptions } from "../auth/[...nextauth]/route";
-import { MongoClient } from "mongodb";
+import { auth } from "@/app/api/auth/[...nextauth]/route";
+import { getDb } from "@/lib/dbConnect"; // ✅ shared DB helper
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
-const uri = process.env.MONGODB_URI;
 
 export async function POST(req) {
-  const session = await getServerSession(authOptions);
-
-  if (!session?.user?.email) {
-    return new Response(JSON.stringify({ error: "Not authenticated" }), {
-      status: 401,
-    });
-  }
-
   try {
-    const client = new MongoClient(uri);
-    await client.connect();
-    const db = client.db("danceHive");
+    const session = await auth();
 
+    // 🔒 Ensure user is authenticated
+    if (!session?.user?.email) {
+      return new Response(JSON.stringify({ error: "Not authenticated" }), {
+        status: 401,
+      });
+    }
+
+    // ✅ Use shared DB connection
+    const db = await getDb();
+
+    // 🧩 Find user in DB
     const user = await db
       .collection("users")
       .findOne({ email: session.user.email });
-    if (!user) throw new Error("User not found");
 
-    // Create a Stripe Checkout Session
+    if (!user) {
+      throw new Error("User not found");
+    }
+
+    // 💳 Create Stripe Checkout Session
     const checkoutSession = await stripe.checkout.sessions.create({
       payment_method_types: ["card"],
       customer_email: user.email,
@@ -47,13 +49,18 @@ export async function POST(req) {
       cancel_url: `${req.headers.get("origin")}/dashboard`,
     });
 
+    console.log(`✅ Stripe Checkout session created for: ${user.email}`);
+
+    // ✅ Return checkout session URL
     return new Response(JSON.stringify({ url: checkoutSession.url }), {
       status: 200,
+      headers: { "Content-Type": "application/json" },
     });
   } catch (error) {
-    console.error("Stripe checkout error:", error);
-    return new Response(JSON.stringify({ error: error.message }), {
-      status: 500,
-    });
+    console.error("❌ Stripe checkout error:", error);
+    return new Response(
+      JSON.stringify({ error: error.message || "Internal Server Error" }),
+      { status: 500 }
+    );
   }
 }

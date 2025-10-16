@@ -15,28 +15,29 @@
     "isolatedModules": true,
     "jsx": "preserve",
     "incremental": true,
-    /* ✅ Allow absolute imports from `src/` */
-    "baseUrl": ".",
+
+    /* ✅ Absolute imports from `src/` */
+    "baseUrl": "src",
     "paths": {
-      "@/*": ["src/*"],
-      "@/lib/*": ["src/lib/*"]
+      "@/*": ["*"], // now "@/app" maps to "src/app"
+      "@/lib/*": ["lib/*"] // keeps optional shorter alias for lib
     },
-    /* ✅ Useful for Next.js app directory (Turbopack) */
-    "types": ["node", "react", "react-dom", "next", "next/types"],
-    "plugins": [
-      {
-        "name": "next"
-      }
-    ]
+
+    /* ✅ Next.js types and plugin support */
+    "types": ["node", "react", "react-dom", "next"],
+    "plugins": [{ "name": "next" }]
   },
+
   "include": [
-    "**/*.js",
-    "**/*.jsx",
+    "next-env.d.ts",
     "**/*.ts",
     "**/*.tsx",
-    "next-env.d.ts",
+    "**/*.js",
+    "**/*.jsx",
     "src/types/**/*.d.ts",
-    ".next/types/**/*.ts"
+    ".next/types/**/*.ts",
+    "next.config.mjs"
   ],
+
   "exclude": ["node_modules"]
 }

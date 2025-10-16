@@ -1,17 +1,13 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Inter } from "next/font/google";
 import "./globals.css";
 import Providers from "@/components/Providers";
-import { Toaster } from "react-hot-toast"; // ✅ Add this import
+import { Toaster } from "react-hot-toast"; // ✅ Toast notifications
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+// ✅ Use Inter (built-in Google font)
+const inter = Inter({
   subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
+  variable: "--font-inter",
 });
 
 export const metadata: Metadata = {
@@ -26,13 +22,11 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
+      <body className={`${inter.variable} antialiased`}>
         {/* ✅ Wrap your app's global providers */}
         <Providers>{children}</Providers>
 
-        {/* ✅ Add the toast notification system here */}
+        {/* ✅ Toast notification system */}
         <Toaster position="top-right" reverseOrder={false} />
       </body>
     </html>

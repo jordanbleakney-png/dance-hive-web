@@ -68,7 +68,7 @@ export default function AdminTrialsPage() {
   if (status === "loading" || loading)
     return <p className="p-10 text-center">Loading trial bookings...</p>;
 
-  if (!trials.length)
+  if (!Array.isArray(trials) || trials.length === 0)
     return (
       <div className="min-h-screen bg-gray-50 p-8">
         <h1 className="text-3xl font-bold mb-6">🧾 Trial Bookings</h1>

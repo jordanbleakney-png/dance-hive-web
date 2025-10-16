@@ -1,43 +1,51 @@
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/app/api/auth/[...nextauth]/route";
-import { MongoClient } from "mongodb";
-
-const uri = process.env.MONGODB_URI;
+import { NextResponse } from "next/server";
+import { getDb } from "@/lib/dbConnect";
+import { auth } from "@/app/api/auth/[...nextauth]/route";
 
 export async function GET() {
   try {
-    const session = await getServerSession(authOptions);
+    // ✅ Authenticate and authorize
+    const session = await auth();
 
-    // 🔒 Check admin access
-    if (!session?.user || session.user.role !== "admin") {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { "Content-Type": "application/json" },
-      });
+    if (!session || session.user.role !== "admin") {
+      return NextResponse.json(
+        { error: "Unauthorized access" },
+        { status: 401 }
+      );
     }
 
-    const client = new MongoClient(uri);
-    await client.connect();
-    const db = client.db("danceHive");
+    // ✅ Use shared MongoDB connection
+    const db = await getDb();
 
     // ✅ Fetch all trial bookings
-    const trials = await db
-      .collection("trialBookings")
-      .find()
-      .sort({ createdAt: -1 })
-      .toArray();
+    const trials = await db.collection("trialBookings").find().toArray();
 
-    await client.close();
+    // ✅ Optional: fetch all users for enrichment
+    const users = await db.collection("users").find().toArray();
 
-    return new Response(JSON.stringify({ trials }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
+    // ✅ Combine trials with related user info if available
+    const trialsWithUsers = trials.map((trial) => {
+      const user = users.find(
+        (u) => u._id.toString() === trial.userId?.toString()
+      );
+      return {
+        ...trial,
+        user: user
+          ? { name: user.name, email: user.email, role: user.role }
+          : null,
+      };
     });
-  } catch (err) {
-    console.error("Error fetching trials:", err);
-    return new Response(JSON.stringify({ error: "Failed to fetch trials" }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" },
-    });
+
+    // ✅ Return consistent JSON shape for frontend
+    return NextResponse.json(
+      { success: true, trials: trialsWithUsers },
+      { status: 200 }
+    );
+  } catch (error) {
+    console.error("❌ Error fetching trials:", error);
+    return NextResponse.json(
+      { success: false, message: "Failed to fetch trial bookings" },
+      { status: 500 }
+    );
   }
 }
