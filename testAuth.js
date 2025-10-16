@@ -4,7 +4,7 @@ import bcrypt from "bcrypt";
 // === CONFIG ===
 const uri =
   process.env.MONGODB_URI ||
-  "mongodb+srv://jordanbleakney_db_user:cyHsjjjV45xnVntM@cluster0.iug2hbj.mongodb.net/danceHive?retryWrites=true&w=majority";
+  "mongodb+srv://testauth_db_user:cyHsjjjV45xnVntM@cluster0.iug2hbj.mongodb.net/danceHive?retryWrites=true&w=majority";
 const dbName = "danceHive";
 const testEmail = "admin@dancehive.com";
 const testPassword = "password123";
