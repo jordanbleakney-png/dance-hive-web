@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import toast from "react-hot-toast";
 
 export default function BookTrialPage() {
+  const searchParams = useSearchParams();
   const [classes, setClasses] = useState([]);
   const [form, setForm] = useState({
     childName: "",
@@ -30,6 +32,13 @@ export default function BookTrialPage() {
     }
     loadClasses();
   }, []);
+
+  // Preselect class from query param if provided
+  useEffect(() => {
+    const cid = searchParams?.get("classId");
+    if (!cid) return;
+    setForm((prev) => ({ ...prev, classId: cid }));
+  }, [searchParams]);
 
   // ✅ Handle form input
   function handleChange(e) {

@@ -1,18 +1,18 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import { auth } from "@/app/api/auth/[...nextauth]/route";
 import { getDb } from "@/lib/dbConnect";
-import bcrypt from "bcryptjs"; // ✅ for password hashing
+import bcrypt from "bcryptjs"; // âœ… for password hashing
 
 export async function PATCH(req: Request) {
   try {
-    // ✅ Authenticate admin
+    // âœ… Authenticate admin
     const session = await auth();
     if (!session || session.user.role !== "admin") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // ✅ Parse request body
+    // âœ… Parse request body
     const { id, status } = await req.json();
     if (!id || !status) {
       return NextResponse.json(
@@ -21,10 +21,10 @@ export async function PATCH(req: Request) {
       );
     }
 
-    // ✅ Get DB connection
+    // âœ… Get DB connection
     const db = await getDb();
 
-    // ✅ Find trial first (we’ll need its data if status is "converted")
+    // âœ… Find trial first (weâ€™ll need its data if status is "converted")
     const trial = await db.collection("trialBookings").findOne({
       _id: new ObjectId(id),
     });
@@ -33,7 +33,7 @@ export async function PATCH(req: Request) {
       return NextResponse.json({ error: "Trial not found" }, { status: 404 });
     }
 
-    // ✅ Update the trial booking status
+    // âœ… Update the trial booking status
     await db.collection("trialBookings").updateOne(
       { _id: new ObjectId(id) },
       {
@@ -44,9 +44,9 @@ export async function PATCH(req: Request) {
       }
     );
 
-    console.log(`✅ Updated trial ${id} → ${status}`);
+    console.log(`âœ… Updated trial ${id} â†’ ${status}`);
 
-    // 🧩 If status is converted → auto-create a user account
+    // ðŸ§© If status is converted â†’ auto-create a user account
     if (status === "converted") {
       const existingUser = await db
         .collection("users")
@@ -60,23 +60,31 @@ export async function PATCH(req: Request) {
           email: trial.email,
           password: hashedPassword,
           role: "customer",
+          parentPhone: trial.phone || trial.parentPhone || "",
+          phone: trial.phone || trial.parentPhone || "",
+          childName: trial.childName || "",
+          age: Number(trial.childAge) || null,
+          membership: { status: "none", classId: trial.classId || null },
           createdAt: new Date(),
         });
 
-        console.log(`✅ Created new user for ${trial.email}`);
+        console.log(`âœ… Created new user for ${trial.email}`);
       } else {
         console.log(
-          `ℹ️ User already exists for ${trial.email}, skipping creation`
+          `â„¹ï¸ User already exists for ${trial.email}, skipping creation`
         );
       }
     }
 
     return NextResponse.json({ success: true, status }, { status: 200 });
   } catch (err) {
-    console.error("❌ Error updating trial status:", err);
+    console.error("âŒ Error updating trial status:", err);
     return NextResponse.json(
       { error: "Failed to update trial" },
       { status: 500 }
     );
   }
 }
+
+
+

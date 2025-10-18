@@ -80,6 +80,7 @@ export default function ClassDetailPage() {
                 <th className="px-4 py-2 border">Age</th>
                 <th className="px-4 py-2 border">Parent</th>
                 <th className="px-4 py-2 border">Contact</th>
+                <th className="px-4 py-2 border">Email</th>
                 <th className="px-4 py-2 border">Status</th>
               </tr>
             </thead>
@@ -89,9 +90,8 @@ export default function ClassDetailPage() {
                   <td className="px-4 py-2 border">{s.childName}</td>
                   <td className="px-4 py-2 border">{s.childAge}</td>
                   <td className="px-4 py-2 border">{s.parentName}</td>
-                  <td className="px-4 py-2 border text-blue-600">
-                    {s.parentPhone || s.email}
-                  </td>
+                  <td className="px-4 py-2 border text-blue-600">{s.parentPhone || s.email}</td>
+                  <td className="px-4 py-2 border">{s.email}</td>
                   <td className="px-4 py-2 border">
                     <select
                       value={s.membership?.status || "pending"}

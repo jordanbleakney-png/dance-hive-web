@@ -1,25 +1,23 @@
-import { getDb } from "@/lib/dbConnect";
-
-const uri = process.env.MONGODB_URI;
+﻿import { getDb } from "@/lib/dbConnect";
 
 export async function GET(req) {
-  const { searchParams } = new URL(req.url);
-  const email = searchParams.get("email");
-
-  if (!email) {
-    return new Response(JSON.stringify({ error: "Email is required" }), {
-      status: 400,
-    });
-  }
-
-  const client = new MongoClient(uri);
-  await client.connect();
-  const db = client.db("danceHive");
-
   try {
+    const { searchParams } = new URL(req.url);
+    const email = searchParams.get("email");
+
+    if (!email) {
+      return new Response(JSON.stringify({ error: "Email is required" }), {
+        status: 400,
+      });
+    }
+
+    const db = await getDb();
     const user = await db
       .collection("users")
-      .findOne({ $or: [{ email }, { email }] });
+      .findOne(
+        { email: email.toLowerCase() },
+        { projection: { _id: 0, role: 1, membership: 1 } }
+      );
 
     if (!user) {
       return new Response(JSON.stringify({ error: "User not found" }), {
@@ -27,19 +25,11 @@ export async function GET(req) {
       });
     }
 
-    return new Response(
-      JSON.stringify({
-        role: user.role,
-        membership: user.membership || {},
-      }),
-      { status: 200 }
-    );
+    return new Response(JSON.stringify(user), { status: 200 });
   } catch (err) {
-    console.error("❌ Error fetching user status:", err);
+    console.error("[users] Error fetching user status:", err);
     return new Response(JSON.stringify({ error: "Internal server error" }), {
       status: 500,
     });
-  } finally {
-    await client.close();
   }
 }

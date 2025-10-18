@@ -18,7 +18,7 @@ export default function SuccessPage() {
 
         // Small delay for smooth UX
         setTimeout(() => {
-          router.push("/dashboard");
+          router.push("/dashboard?firstTime=1");
         }, 1000);
       } catch (err) {
         console.error("❌ Failed to refresh session:", err);

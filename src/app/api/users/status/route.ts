@@ -21,6 +21,7 @@ export async function GET(req: Request) {
           email: 1,
           role: 1,
           membership: 1,
+          onboardingComplete: 1,
         },
       }
     );

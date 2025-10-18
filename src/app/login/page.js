@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState } from "react";
 import { signIn } from "next-auth/react";
@@ -20,7 +20,7 @@ export default function LoginPage() {
           ? window.location.origin
           : "http://localhost:3000";
 
-      console.log("🔍 Attempting login for:", email);
+      console.log("ðŸ” Attempting login for:", email);
 
       const res = await signIn("credentials", {
         redirect: false,
@@ -28,22 +28,22 @@ export default function LoginPage() {
         password,
       });
 
-      console.log("🔍 Login response:", res);
+      console.log("ðŸ” Login response:", res);
 
       if (res?.error) {
         setError("Invalid email or password");
         return;
       }
 
-      // ✅ Fetch session after successful sign-in to get the user role
+      // âœ… Fetch session after successful sign-in to get the user role
       const sessionRes = await fetch("/api/auth/session");
       const sessionData = await sessionRes.json();
 
-      console.log("✅ Session after login:", sessionData);
+      console.log("âœ… Session after login:", sessionData);
 
       const role = sessionData?.user?.role;
 
-      // ✅ Smart redirect based on role
+      // âœ… Smart redirect based on role
       if (role === "admin") {
         router.push("/admin");
       } else if (role === "teacher") {
@@ -52,7 +52,7 @@ export default function LoginPage() {
         router.push("/dashboard");
       }
     } catch (err) {
-      console.error("💥 Login error:", err);
+      console.error("ðŸ’¥ Login error:", err);
       setError("Unexpected login error. Check console.");
     }
   };
@@ -95,3 +95,4 @@ export default function LoginPage() {
     </div>
   );
 }
+

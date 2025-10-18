@@ -1,39 +1,76 @@
-import { auth } from "@/app/api/auth/[...nextauth]/route";
-import { MongoClient, ObjectId } from "mongodb";
+﻿import { auth } from "@/app/api/auth/[...nextauth]/route";
+import { getDb } from "@/lib/dbConnect";
+import { ObjectId } from "mongodb";
 
-const uri = process.env.MONGODB_URI;
-
-export async function GET(req, context) {
-  const session = await getServerSession(authOptions);
+export async function GET(_, context) {
+  const session = await auth();
   if (!session || session.user.role !== "admin") {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), {
-      status: 401,
-    });
+    return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
   }
 
-  const { id } = await context.params; // ✅ must await params in Next.js 15
-  const client = new MongoClient(uri);
-  await client.connect();
-  const db = client.db("danceHive");
+  const { id } = context.params;
+  const db = await getDb();
 
-  const classInfo = await db
-    .collection("classes")
-    .findOne({ _id: new ObjectId(id) });
+  let classObjectId;
+  try {
+    classObjectId = new ObjectId(id);
+  } catch {
+    return new Response(JSON.stringify({ error: "Invalid class id" }), { status: 400 });
+  }
 
+  const classInfo = await db.collection("classes").findOne({ _id: classObjectId });
   if (!classInfo) {
-    await client.close();
-    return new Response(JSON.stringify({ error: "Class not found" }), {
-      status: 404,
-    });
+    return new Response(JSON.stringify({ error: "Class not found" }), { status: 404 });
   }
 
-  // Find all students enrolled in this class
-  const students = await db
-    .collection("users")
-    .find({ "membership.classId": id })
-    .toArray();
+  // Load enrollments for this class
+  const enrollments = await db.collection("enrollments").find({ classId: classObjectId }).toArray();
+  const userIds = enrollments.map((e) => e.userId);
 
-  await client.close();
+  // Load users for enrollments
+  const users = await db
+    .collection("users")
+    .find({ _id: { $in: userIds } })
+    .project({ email: 1, name: 1, parentPhone: 1, childName: 1, studentName: 1, age: 1, membership: 1 })
+    .toArray();
+  const userById = new Map(users.map((u) => [String(u._id), u]));
+
+  // For users missing child details, try to backfill from latest trial for this class
+  const idString = String(classObjectId);
+  const students = [];
+  for (const e of enrollments) {
+    const u = userById.get(String(e.userId));
+    if (!u) continue;
+    let childName = u.childName || u.studentName || "";
+    let childAge = u.age || null;
+    if (!childName || childAge == null) {
+      const trial = await db
+        .collection("trialBookings")
+        .find({ email: u.email, classId: idString })
+        .sort({ createdAt: -1 })
+        .limit(1)
+        .toArray();
+      if (trial[0]) {
+        childName = childName || trial[0].childName || "";
+        if (childAge == null) {
+          const tAge = Number(trial[0].childAge);
+          childAge = Number.isFinite(tAge) ? tAge : null;
+        }
+      }
+    }
+    students.push({
+      _id: u._id,
+      email: u.email,
+      parentName: u.name || "",
+      parentPhone: u.parentPhone || "",
+      childName,
+      childAge,
+      membership: u.membership,
+    });
+  }
 
   return new Response(JSON.stringify({ classInfo, students }), { status: 200 });
 }
+
+
+

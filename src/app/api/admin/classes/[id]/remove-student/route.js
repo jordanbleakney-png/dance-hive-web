@@ -1,61 +1,35 @@
-import { auth } from "@/app/api/auth/[...nextauth]/route";
+﻿import { ObjectId } from 'mongodb';\nimport { auth } from "@/app/api/auth/[...nextauth]/route";
 import { getDb } from "@/lib/dbConnect";
 
-const uri = process.env.MONGODB_URI;
-
 export async function POST(req, context) {
-  const session = await getServerSession(authOptions);
+  const session = await auth();
   if (!session || session.user.role !== "admin") {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), {
-      status: 401,
-    });
+    return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
   }
 
-  // 📨 Extract email safely (handles both email & email)
   const body = await req.json();
-  const email = body.email || body.email;
-  const { id } = await context.params; // ✅ Next.js 15 fix
+  const email = body.email;
+  const { id } = context.params;
 
   if (!email || !id) {
-    console.error("❌ Missing email or class ID:", { email, id });
-    return new Response(JSON.stringify({ error: "Missing data" }), {
-      status: 400,
-    });
+    return new Response(JSON.stringify({ error: "Missing data" }), { status: 400 });
   }
 
-  const client = new MongoClient(uri);
-  await client.connect();
-  const db = client.db("danceHive");
+  const db = await getDb();
 
-  // 🧾 Match users by either email type
-  const userFilter = {
-    $or: [{ email }, { email: email }],
-  };
-
-  // 🧠 1️⃣ Remove membership from user
-  const userUpdate = await db
-    .collection("users")
-    .updateOne(userFilter, { $unset: { membership: "" } });
-
-  // 🧠 2️⃣ Remove their booking entry
-  const bookingDelete = await db.collection("bookings").deleteOne({
-    $or: [{ email: email }, { email: email }],
-    classId: id,
-  });
-
-  // 🧠 3️⃣ Downgrade user role to "customer"
+  // 1) Remove membership from user and downgrade to customer
+  const userFilter = { email: email.toLowerCase() };
   await db.collection("users").updateOne(userFilter, {
+    $unset: { membership: "" },
     $set: { role: "customer" },
   });
 
-  await client.close();
+  // 2) Remove their booking entry (legacy)
+  await db.collection("bookings").deleteOne({ email: email.toLowerCase(), classId: id });
 
-  console.log("✅ Student removed successfully:", {
-    email,
-    id,
-    userUpdate,
-    bookingDelete,
-  });
+  // Optionally remove from enrollments (if present)
+  await db.collection("enrollments").deleteOne({ classId: new ObjectId(id), userId: user._id });
 
   return new Response(JSON.stringify({ success: true }), { status: 200 });
 }
+

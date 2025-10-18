@@ -1,4 +1,4 @@
-import Stripe from "stripe";
+﻿import Stripe from "stripe";
 
 /**
  * Extracts a normalized (lowercased) email address from any Stripe event.
@@ -39,7 +39,7 @@ export function getEmailFromStripe(event: Stripe.Event): string | null {
       default: {
         const dataObj = event.data.object;
 
-        // 🧠 Helper type guard
+        // ðŸ§  Helper type guard
         const isPlainObject = (obj: unknown): obj is Record<string, unknown> =>
           obj !== null && typeof obj === "object" && !Array.isArray(obj);
 
@@ -66,11 +66,12 @@ export function getEmailFromStripe(event: Stripe.Event): string | null {
     }
 
     console.warn(
-      `⚠️ [getEmailFromStripe] No email found for event ${event.type}`
+      `âš ï¸ [getEmailFromStripe] No email found for event ${event.type}`
     );
     return null;
   } catch (err) {
-    console.error("💥 [getEmailFromStripe] Error extracting email:", err);
+    console.error("ðŸ’¥ [getEmailFromStripe] Error extracting email:", err);
     return null;
   }
 }
+

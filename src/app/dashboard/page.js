@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useSession } from "next-auth/react";
 import { useSearchParams } from "next/navigation";
@@ -12,20 +12,23 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [showSuccess, setShowSuccess] = useState(false);
   const [role, setRole] = useState(session?.user?.role || "customer");
+  const [membershipStatus, setMembershipStatus] = useState("none");
+  const [firstTime, setFirstTime] = useState(false);
+  const [onboardingComplete, setOnboardingComplete] = useState(null);
 
-  // ✅ Fetch the latest role from MongoDB
+  // Fetch the latest role and onboarding flag from MongoDB
   useEffect(() => {
     const fetchUserStatus = async () => {
       if (!session?.user?.email) return;
 
       try {
-        const res = await fetch(
-          `/api/users/status?email=${session.user.email}`
-        );
+        const res = await fetch(`/api/users/status?email=${session.user.email}`);
         const data = await res.json();
 
-        if (data?.role) {
-          setRole(data.role);
+        if (data?.role) setRole(data.role);
+        if (data?.membership?.status) setMembershipStatus(data.membership.status);
+        if (typeof data?.onboardingComplete !== "undefined") {
+          setOnboardingComplete(Boolean(data.onboardingComplete));
         }
       } catch (err) {
         console.error("Failed to fetch user status:", err);
@@ -37,8 +40,11 @@ export default function DashboardPage() {
     fetchUserStatus();
   }, [session?.user?.email]);
 
-  // ✅ Show success message after Stripe payment
+  // Success banner and onboarding prompt
   useEffect(() => {
+    const ft = searchParams.get("firstTime");
+    if (ft === "1") setFirstTime(true);
+
     const from = searchParams.get("from");
     if (from === "success") {
       setShowSuccess(true);
@@ -47,7 +53,6 @@ export default function DashboardPage() {
     }
   }, [searchParams]);
 
-  // ✅ Handle Upgrade button click
   const handleUpgrade = async () => {
     try {
       setLoading(true);
@@ -67,25 +72,25 @@ export default function DashboardPage() {
     }
   };
 
-  // 🏷️ Role badge styling logic
+  // Role badge styling logic
   const getRoleBadge = (role) => {
     switch (role) {
       case "member":
         return (
           <span className="ml-2 px-2 py-1 text-xs font-semibold rounded bg-green-100 text-green-700 border border-green-300">
-            🥇 Member
+            Member
           </span>
         );
       case "trial":
         return (
           <span className="ml-2 px-2 py-1 text-xs font-semibold rounded bg-yellow-100 text-yellow-700 border border-yellow-300">
-            🧭 Trial
+            Trial
           </span>
         );
       default:
         return (
           <span className="ml-2 px-2 py-1 text-xs font-semibold rounded bg-gray-100 text-gray-700 border border-gray-300">
-            👤 Customer
+            Customer
           </span>
         );
     }
@@ -95,13 +100,13 @@ export default function DashboardPage() {
     return (
       <DashboardLayout>
         <div className="flex justify-center items-center h-[60vh]">
-          <p className="text-gray-500 animate-pulse">
-            Loading your dashboard...
-          </p>
+          <p className="text-gray-500 animate-pulse">Loading your dashboard...</p>
         </div>
       </DashboardLayout>
     );
   }
+
+  const showOnboarding = firstTime || onboardingComplete === false;
 
   return (
     <DashboardLayout>
@@ -109,7 +114,7 @@ export default function DashboardPage() {
         {/* Success Message */}
         {showSuccess && (
           <div className="bg-green-100 text-green-800 p-3 rounded-lg mb-4">
-            ✅ Payment successful — your membership has been activated!
+            Payment successful — your membership has been activated!
           </div>
         )}
 
@@ -122,8 +127,23 @@ export default function DashboardPage() {
           Your current role: <span className="font-medium">{role}</span>
         </p>
 
+        {/* First-time onboarding prompt */}
+        {showOnboarding && (
+          <div className="bg-blue-50 border border-blue-200 text-blue-800 p-4 rounded-md mb-6 max-w-2xl mx-auto">
+            <p className="font-semibold mb-2">Welcome to your new membership!</p>
+            <p className="mb-3">For security and better service, please:</p>
+            <ul className="list-disc list-inside text-left mb-3">
+              <li>Set a new password</li>
+              <li>Update personal, emergency and medical details</li>
+            </ul>
+            <div className="flex gap-3 justify-center">
+              <a className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md" href="/dashboard/settings">Update Details</a>
+            </div>
+          </div>
+        )}
+
         {/* Role-based Button or Message */}
-        {role !== "member" ? (
+        {!(role === "member" || membershipStatus === "active") ? (
           <button
             onClick={handleUpgrade}
             disabled={loading}
@@ -131,12 +151,9 @@ export default function DashboardPage() {
           >
             {loading ? "Loading..." : "Upgrade to Member"}
           </button>
-        ) : (
-          <p className="text-green-600 font-semibold">
-            🎉 You’re now a Member! Enjoy your full access.
-          </p>
-        )}
+        ) : null}
       </div>
     </DashboardLayout>
   );
 }
+

@@ -1,0 +1,19 @@
+{
+  "projectName": "Dance Hive",
+  "context": "./ai/README.md",
+  "defaultTemperature": 0.2,
+  "language": "typescript",
+  "style": {
+    "framework": "nextjs",
+    "validation": "zod",
+    "db": "mongodb",
+    "styling": "tailwind"
+  },
+  "instructions": [
+    "Always follow the schemas defined in README.md.",
+    "When generating new API routes, import getDb() from '@/lib/dbConnect'.",
+    "Use NextResponse.json for responses and zod for validation.",
+    "Never expose .env.local or API secrets.",
+    "All user-facing routes should check session roles with auth()."
+  ]
+}
