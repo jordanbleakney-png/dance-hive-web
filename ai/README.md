@@ -1,98 +1,80 @@
 ﻿# Dance Hive – System Overview & Development Guide
 
-Purpose: Give contributors and AI tools a clear, accurate picture of the intended product experience and constraints. Self‑service sign‑up is disabled. All accounts originate from trial conversions managed by staff.
+Purpose: Give contributors and AI tools a precise, up‑to‑date picture of Dance Hive’s product flow and implementation guardrails. Self‑service sign‑up is disabled. All accounts originate from trial conversions managed by staff.
 
 ---
 
 ## 1) Public Experience
 
-- Home: Marketing content about Dance Hive and clear CTA to view classes.
-- Classes Page (public): Lists available classes with descriptions and details. Initial classes:
+- Home: marketing content + CTAs.
+- Classes (public): shows available classes with descriptions and details.
   - Hive Tots (18 months – 3 years)
-    - A buzzing blend of ballet, acrobatics and general dance skills for toddlers and their grown-ups. Movement, music, rhythm; builds coordination, balance and confidence.
   - Hive Preschool Ballet (3 – 4 years)
-    - A sweet swirl of ballet. Magical adventures exploring music and rhythm while developing ballet skills, coordination, balance and confidence.
   - Hive Preschool Acro (2.5 – 4 years)
-    - A fusion of acrobatics and dance. Strength, balance, flexibility; foundations for forward rolls, cartwheels and handstands; introduces jazz/street and rhythm through play.
-- Trial Booking: Parent selects a class and submits details. A confirmation page and email are sent.
+- Trial booking: parent selects a class and submits details.
 
-Required fields at booking:
+Required fields
 - Parent: firstName, lastName, email, phone
 - Child: firstName, lastName, age
 - Class: classId
 
-Data recorded in `trialBookings`: parent{}, child{}, classId, status (pending|attended|converted), createdAt, updatedAt, convertedAt (nullable).
+trialBookings schema (effective)
+- parent{}, child{}, classId, status (pending|attended|converted), createdAt, updatedAt, convertedAt (nullable)
+- For legacy data, flat fields (parentName, childName, childAge, phone) may also exist. APIs handle both shapes.
 
-## 2) After the Trial
+## 2) Trial → Account Creation
 
-- Admin/Teacher marks each trial as pending, attended, or converted.
-- If marked converted:
-  - A user record is created (if not exists) with role `customer` and temporary password `dancehive123` (hashed).
-  - The parent receives an email with login instructions.
+- Admin/Teacher updates a trial to converted.
+- If user doesn’t exist, create with role customer and temporary password (hashed).
+- The parent receives login instructions.
 
-## 3) Becoming a Member
+## 3) Membership & Payments (Stripe)
 
-- Logged-in customers see a “Become a Member” button in the dashboard.
-- Clicking it starts Stripe Checkout.
-- On payment success, the webhook:
-  - Activates membership (`users.membership.status = "active"`).
-  - Records an entry in `membershipHistory`.
-  - Enrolls the child into the originally selected class (when class enrollment linkage is present).
-- The dashboard then prompts the user to:
-  - Set a new password.
-  - Complete personal/contact info, emergency contacts, and medical info.
+- Flow: user clicks “Become a Member” → Stripe Checkout (subscription).
+- Webhook is the single source of truth for charges:
+  - invoice.payment_succeeded: activates membership, records membershipHistory, writes a payment record (in GBP pounds), and updates lastPaymentDate.
+  - checkout.session.completed: converts a matching trial (if found), upserts the user (name/phone/child details), enrolls the child in classId from the trial, and records membershipHistory. It no longer writes a payment row (to avoid double entries); renewals/charges are recorded via invoices.
+- Idempotency: processedEvents collection prevents double‑handling.
+- payments collection: amount stored in pounds (e.g., 30), currency stored as GBP.
+- Admin payments page derives Parent Name by joining (case‑insensitive) to users or latest trialBookings; if still unknown, it derives a readable fallback from the email local part.
 
-## 4) Dashboards
+## 4) Dashboards & UX
 
-- Member Dashboard:
-  - Shows account details, payment history, child’s class schedule.
-  - Allows updating personal/emergency/medical information.
-- Teacher Dashboard:
-  - Shows teacher’s profile and weekly classes.
-  - Class detail view: register, mark attendance, open a child’s profile with name, address, contacts, medical and emergency info.
-- Admin Dashboard:
-  - Users tab: view/search users, open user detail.
-  - Trials tab: manage trial statuses (pending→attended→converted).
-  - Payments tab: transactions and paying members.
-  - Classes tab: add/edit/delete classes, move users across classes, remove users from classes.
+- Member dashboard: shows role, hides “Upgrade to Member” when role === member or membership.status === active. Onboarding card uses a single “Update Details” button (password + personal/emergency/medical info) and includes a back link from settings.
+- Teacher dashboard: class list + register page backed by enrollments. Teachers can mark attendance (attendedDates on enrollments).
+- Admin dashboard:
+  - Users: search by email.
+  - Trials: update status (pending → attended → converted).
+  - Payments: transactions (GBP), parent name from users/trials.
+  - Classes: list shows student counts via enrollments; detail shows child name, age, parent contact and email.
 
 ## 5) Collections (MongoDB)
 
-- `classes`: name, style, day, time, capacity, instructor
-- `trialBookings`: parent{}, child{}, classId, status, createdAt, updatedAt, convertedAt
-- `users`: email, password (hashed), role (trial|customer|member|teacher|admin), membership{status, plan, timestamps}
-- `payments`: Stripe payment snapshots (and/or inferred from events)
-- `membershipHistory`: conversions/renewals/cancellations with timestamps
-- `processedEvents`: idempotency keys for Stripe webhook
+- classes: name, style, day, time, capacity, instructor
+- trialBookings: parent{}, child{}, classId, status, createdAt, updatedAt, convertedAt
+- users: email, password (hashed), role (trial|customer|member|teacher|admin), parentPhone/phone, childName, age, membership{status, plan, classId, timestamps}
+- enrollments: userId, classId, status, attendedDates[], createdAt
+- payments: email, amount (pounds), currency (GBP), payment_status, payment_intent, createdAt
+- membershipHistory: conversions/renewals/cancellations with timestamps
+- processedEvents: Stripe webhook idempotency keys
 
 ## 6) Guardrails & Conventions
 
-- No public sign-up:
-  - `/signup` page removed.
-  - `/api/register` endpoint disabled. Do not reintroduce public registration.
-  - Accounts must be created via trial conversion or admin tooling.
-- Auth:
-  - NextAuth Credentials provider (JWT sessions). `session.user.role` drives UI routing and access.
-- API:
-  - Validate input (Zod where practical). Return `NextResponse.json()` consistently.
-  - Use shared DB helper `getDb()` from `src/lib/dbConnect.ts` (avoid ad hoc clients).
-- Stripe:
-  - Use Checkout for payments; webhook updates membership + history. Keep handlers idempotent using `processedEvents`.
-- Styling:
-  - Tailwind v4. Keep components minimal and accessible.
+- No public sign‑up: `/signup` removed; `/api/register` disabled.
+- Auth: NextAuth Credentials (JWT). `session.user.role` drives routing and access.
+- API: validate inputs (Zod where practical), return `NextResponse.json()`, and use the shared DB helper `getDb()`.
+- Stripe: Checkout for subscription; rely on invoices for payment records; keep handlers idempotent.
+- Styling: Tailwind v4; keep components accessible and minimal.
 
-## 7) Roadmap
+## 7) Developer Utilities
 
-- Replace Stripe with GoCardless for monthly direct debits.
-- Analytics dashboard (conversion, attendance, retention).
-- Teacher notes per class session.
-- Expand class types/age brackets.
-- Email/SMS reminders.
+- scripts/backfillUsers.js: backfill names/child details/membership.classId from trialBookings; create enrollments. Optional purge flags.
+- scripts/normalizePayments.js: convert payment amounts from pence → pounds and (optionally) remove near‑duplicates.
 
-## 8) Do/Don’t for Code Generation
+## 8) Coding Do/Don’t
 
 - Do enforce the trial → conversion → membership flow.
 - Do gate routes and UI by role.
-- Do keep `/api/register` disabled; don’t add public sign-up UIs.
+- Do keep `/api/register` disabled; don’t add public sign‑up.
 - Do standardize on `getDb()` for Mongo access.
-- Don’t log secrets or credentials. Don’t store plaintext passwords.
+- Don’t log secrets or credentials; don’t store plaintext passwords.
