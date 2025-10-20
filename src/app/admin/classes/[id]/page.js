@@ -87,10 +87,18 @@ export default function ClassDetailPage() {
             <tbody>
               {students.map((s) => (
                 <tr key={s._id} className="hover:bg-gray-50">
-                  <td className="px-4 py-2 border">{s.childName}</td>
+                  <td className="px-4 py-2 border">{
+                    [s?.child?.firstName, s?.child?.lastName]
+                      .filter(Boolean)
+                      .join(" ") || s.childName || ""
+                  }</td>
                   <td className="px-4 py-2 border">{s.childAge}</td>
-                  <td className="px-4 py-2 border">{s.parentName}</td>
-                  <td className="px-4 py-2 border text-blue-600">{s.parentPhone || s.email}</td>
+                  <td className="px-4 py-2 border">{
+                    [s?.parent?.firstName, s?.parent?.lastName]
+                      .filter(Boolean)
+                      .join(" ") || s.parentName || ""
+                  }</td>
+                  <td className="px-4 py-2 border text-blue-600">{s.parentPhone || s.phone || s.email}</td>
                   <td className="px-4 py-2 border">{s.email}</td>
                   <td className="px-4 py-2 border">
                     <select
@@ -134,7 +142,7 @@ export default function ClassDetailPage() {
                   <td className="px-4 py-2 border text-center">
                     <button
                       onClick={async () => {
-                        if (!confirm(`Remove ${s.childName} from this class?`))
+                        if (!confirm(`Remove ${[s?.child?.firstName, s?.child?.lastName].filter(Boolean).join(" ") || s.childName || "this student"} from this class?`))
                           return;
                         const res = await fetch(
                           `/api/admin/classes/${id}/remove-student`,

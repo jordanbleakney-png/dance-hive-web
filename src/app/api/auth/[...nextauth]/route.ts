@@ -71,6 +71,16 @@ const authConfig = {
       if (session.user && token?.role) {
         session.user.role = token.role;
       }
+      try {
+        if (session.user?.email) {
+          const db = await getDb();
+          const u = await db.collection("users").findOne({ email: session.user.email });
+          if (u) {
+            const first = (u as any)?.parent?.firstName || (u as any)?.name || session.user.name || "User";
+            session.user.name = first;
+          }
+        }
+      } catch {}
       return session;
     },
 

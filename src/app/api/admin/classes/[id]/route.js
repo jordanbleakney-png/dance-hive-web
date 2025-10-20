@@ -31,7 +31,7 @@ export async function GET(_, context) {
   const users = await db
     .collection("users")
     .find({ _id: { $in: userIds } })
-    .project({ email: 1, name: 1, parentPhone: 1, childName: 1, studentName: 1, age: 1, membership: 1 })
+    .project({ email: 1, name: 1, phone: 1, parent: 1, child: 1, childName: 1, studentName: 1, age: 1, membership: 1 })
     .toArray();
   const userById = new Map(users.map((u) => [String(u._id), u]));
 
@@ -41,7 +41,7 @@ export async function GET(_, context) {
   for (const e of enrollments) {
     const u = userById.get(String(e.userId));
     if (!u) continue;
-    let childName = u.childName || u.studentName || "";
+    let childName = (u.child && `${u.child.firstName || ""} ${u.child.lastName || ""}`.trim()) || u.childName || u.studentName || "";
     let childAge = u.age || null;
     if (!childName || childAge == null) {
       const trial = await db
@@ -58,11 +58,13 @@ export async function GET(_, context) {
         }
       }
     }
+    const parentName = (u.parent && `${u.parent.firstName || ""} ${u.parent.lastName || ""}`.trim()) || u.name || "";
+
     students.push({
       _id: u._id,
       email: u.email,
-      parentName: u.name || "",
-      parentPhone: u.parentPhone || "",
+      parentName,
+      parentPhone: u.phone || "",
       childName,
       childAge,
       membership: u.membership,

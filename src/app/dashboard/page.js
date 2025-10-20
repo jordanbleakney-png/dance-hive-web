@@ -15,6 +15,7 @@ export default function DashboardPage() {
   const [membershipStatus, setMembershipStatus] = useState("none");
   const [firstTime, setFirstTime] = useState(false);
   const [onboardingComplete, setOnboardingComplete] = useState(null);
+  const [overview, setOverview] = useState(null);
 
   // Fetch the latest role and onboarding flag from MongoDB
   useEffect(() => {
@@ -38,6 +39,21 @@ export default function DashboardPage() {
     };
 
     fetchUserStatus();
+  }, [session?.user?.email]);
+
+  // Fetch overview (child details + enrollments)
+  useEffect(() => {
+    const run = async () => {
+      if (!session?.user?.email) return;
+      try {
+        const res = await fetch("/api/account/overview");
+        const data = await res.json();
+        if (res.ok) setOverview(data);
+      } catch (e) {
+        console.warn("Failed to load overview", e);
+      }
+    };
+    run();
   }, [session?.user?.email]);
 
   // Success banner and onboarding prompt
@@ -138,6 +154,94 @@ export default function DashboardPage() {
             </ul>
             <div className="flex gap-3 justify-center">
               <a className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md" href="/dashboard/settings">Update Details</a>
+            </div>
+          </div>
+        )}
+
+        {/* Child details */}
+        {overview?.child && (
+          <div className="max-w-3xl mx-auto bg-white rounded-xl shadow p-6 text-left mb-6">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-lg font-semibold">Child Details</h2>
+              <a href="/dashboard/settings" className="text-sm text-blue-600 hover:underline">Edit</a>
+            </div>
+            <div className="grid md:grid-cols-2 gap-4 text-sm">
+              <div>
+                <div className="text-gray-500">Name</div>
+                <div className="font-medium">
+                  {[overview.child.firstName, overview.child.lastName].filter(Boolean).join(" ")}
+                </div>
+              </div>
+              {overview.child.age != null && (
+                <div>
+                  <div className="text-gray-500">Age</div>
+                  <div className="font-medium">{overview.child.age}</div>
+                </div>
+              )}
+              <div className="md:col-span-2">
+                <div className="text-gray-500">Medical Information</div>
+                <div className="font-medium whitespace-pre-wrap">
+                  {overview.medical || "No medical information on file. Please update in Settings."}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Enrolled classes */}
+        {Array.isArray(overview?.enrollments) && overview.enrollments.length > 0 && (
+          <div className="max-w-3xl mx-auto bg-white rounded-xl shadow p-6 text-left mb-6">
+            <h2 className="text-lg font-semibold mb-3">Enrolled Classes</h2>
+            <div className="rounded-lg border border-gray-200 overflow-hidden">
+              <table className="min-w-full">
+                <thead className="bg-gray-100">
+                  <tr>
+                    <th className="px-4 py-2 border text-left">Class</th>
+                    <th className="px-4 py-2 border text-left">Schedule</th>
+                    <th className="px-4 py-2 border text-left">Teacher</th>
+                    <th className="px-4 py-2 border text-left">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {overview.enrollments.map((e) => (
+                    <tr key={e._id} className="hover:bg-gray-50">
+                      <td className="px-4 py-2 border">{e.class?.name || ""}</td>
+                      <td className="px-4 py-2 border">{[e.class?.day, e.class?.time].filter(Boolean).join(" ")}</td>
+                      <td className="px-4 py-2 border">{e.class?.instructor || "TBA"}</td>
+                      <td className="px-4 py-2 border">{e.status || "active"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* Recent payments */}
+        {Array.isArray(overview?.payments) && overview.payments.length > 0 && (
+          <div className="max-w-3xl mx-auto bg-white rounded-xl shadow p-6 text-left mb-6">
+            <h2 className="text-lg font-semibold mb-3">Recent Payments</h2>
+            <div className="rounded-lg border border-gray-200 overflow-hidden">
+              <table className="min-w-full">
+                <thead className="bg-gray-100">
+                  <tr>
+                    <th className="px-4 py-2 border text-left">Date</th>
+                    <th className="px-4 py-2 border text-left">Amount</th>
+                    <th className="px-4 py-2 border text-left">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {overview.payments.map((p, i) => (
+                    <tr key={i} className="hover:bg-gray-50">
+                      <td className="px-4 py-2 border">{new Date(p.createdAt || p.timestamp || Date.now()).toLocaleString()}</td>
+                      <td className="px-4 py-2 border">
+                        {new Intl.NumberFormat('en-GB', { style: 'currency', currency: String(p.currency || 'GBP').toUpperCase(), minimumFractionDigits: 0 }).format(Number(p.amount) || 0)}
+                      </td>
+                      <td className="px-4 py-2 border">{p.payment_status || 'paid'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
         )}

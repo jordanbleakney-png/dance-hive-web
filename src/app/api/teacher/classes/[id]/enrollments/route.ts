@@ -34,6 +34,26 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
         },
         { $unwind: "$user" },
         {
+          $addFields: {
+            "user.name": {
+              $ifNull: [
+                "$user.name",
+                {
+                  $trim: {
+                    input: {
+                      $concat: [
+                        { $ifNull: ["$user.parent.firstName", ""] },
+                        " ",
+                        { $ifNull: ["$user.parent.lastName", ""] },
+                      ],
+                    },
+                  },
+                },
+              ],
+            },
+          },
+        },
+        {
           $project: {
             _id: 1,
             userId: 1,
@@ -42,7 +62,7 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
             attendedDates: 1,
             "user.name": 1,
             "user.email": 1,
-            "user.parentPhone": 1,
+            "user.phone": 1,
             "user.medical": 1,
             "user.emergencyContact": 1,
           },
@@ -56,4 +76,3 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
 }
-

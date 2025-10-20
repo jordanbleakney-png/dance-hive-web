@@ -1,25 +1,26 @@
-﻿import { NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { getDb } from "@/lib/dbConnect";
 import { wasProcessed } from "@/lib/idempotency";
 import { getEmailFromStripe } from "@/lib/stripeEmail";
 import { ObjectId } from "mongodb";
 
-// Use SDK default API version to avoid invalid version strings
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
+
+function split(full?: string) {
+  if (!full || typeof full !== "string") return { first: "", last: "" };
+  const parts = full.trim().split(/\s+/);
+  if (parts.length === 1) return { first: parts[0], last: "" };
+  return { first: parts[0], last: parts.slice(1).join(" ") };
+}
 
 export async function POST(req: Request): Promise<Response> {
   const sig = req.headers.get("stripe-signature");
   const body = await req.text();
 
   let event: Stripe.Event;
-
   try {
-    if (!sig) {
-      console.error("[webhook] Missing Stripe signature");
-      return new NextResponse("Missing signature", { status: 400 });
-    }
-
+    if (!sig) return new NextResponse("Missing signature", { status: 400 });
     event = stripe.webhooks.constructEvent(
       body,
       sig,
@@ -27,35 +28,28 @@ export async function POST(req: Request): Promise<Response> {
     );
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("[webhook] Signature verification failed:", message);
     return new NextResponse(`Webhook Error: ${message}`, { status: 400 });
   }
 
   const db = await getDb();
 
-  // Idempotency check (avoid duplicate handling)
-  const alreadyProcessed = await wasProcessed(event.id);
-  if (alreadyProcessed) {
-    console.log(`[webhook] Event ${event.id} already processed — skipping`);
+  // Idempotency guard
+  if (await wasProcessed(event.id)) {
     return new NextResponse("Event already processed", { status: 200 });
   }
 
   const email = getEmailFromStripe(event);
-  if (!email) {
-    console.warn(`[webhook] Could not extract email from event ${event.type}`);
-    return new NextResponse("Missing email", { status: 200 });
-  }
+  if (!email) return new NextResponse("Missing email", { status: 200 });
 
   try {
     switch (event.type) {
-      // Checkout completed — convert trial -> user and enroll
       case "checkout.session.completed": {
         const session = event.data.object as Stripe.Checkout.Session;
 
         const trial = await db.collection("trialBookings").findOne({ email });
 
         if (trial) {
-          // Mark trial as converted
+          // Mark trial converted
           await db
             .collection("trialBookings")
             .updateOne(
@@ -63,43 +57,53 @@ export async function POST(req: Request): Promise<Response> {
               { $set: { status: "converted", convertedAt: new Date() } }
             );
 
-          // Upsert user (copy relevant fields)
+          // Build normalized names/phone
+          const parentFirstName = (trial as any)?.parent?.firstName || split((trial as any)?.parentName).first;
+          const parentLastName = (trial as any)?.parent?.lastName || split((trial as any)?.parentName).last;
+          const fullParentName = `${parentFirstName || ""}${parentFirstName && parentLastName ? " " : ""}${parentLastName || ""}`.trim() || "User";
+          const phone = (trial as any)?.phone || (trial as any)?.parentPhone || "";
+          const childFirstName = (trial as any)?.child?.firstName || split((trial as any)?.childName).first;
+          const childLastName = (trial as any)?.child?.lastName || split((trial as any)?.childName).last;
+          const childName = `${childFirstName || ""}${childFirstName && childLastName ? " " : ""}${childLastName || ""}`.trim();
+
+          // Upsert user with nested parent/child to mirror trialBookings
           await db.collection("users").updateOne(
             { email },
             {
-              $setOnInsert: { createdAt: new Date(), joinedFromTrial: true }, $set: {
-                name: trial.parentName || trial.childName || "User",
-                phone: trial.parentPhone || "",
+              $setOnInsert: { createdAt: new Date(), joinedFromTrial: true },
+              $set: {
+                phone,
                 role: "member",
-                membership: { status: "active", plan: "monthly", joinedAt: new Date() },
-                age: Number(trial.childAge) || trial.age || null, updatedAt: new Date(),
+                membership: {
+                  status: "active",
+                  plan: "monthly",
+                  joinedAt: new Date(),
+                  classId: (trial as any)?.classId || null,
+                },
+                parent: { firstName: parentFirstName, lastName: parentLastName },
+                child: { firstName: childFirstName, lastName: childLastName },
+                age: Number((trial as any)?.childAge) || (trial as any)?.age || null,
+                updatedAt: new Date(),
               },
             },
             { upsert: true }
           );
 
-          await db.collection("membershipHistory").insertOne({
-            email,
-            event: "converted",
-            timestamp: new Date(),
-            details: { source: "stripe_checkout", sessionId: session.id },
-          });
-
-          // Enroll child into the selected class if available
-          if (trial?.classId) {
+          // Enrollment if classId exists
+          if ((trial as any)?.classId) {
             const userDoc = await db.collection("users").findOne({ email });
             if (userDoc) {
               let classObjectId: ObjectId | null = null;
               try {
-                classObjectId = new ObjectId(String(trial.classId));
+                classObjectId = new ObjectId(String((trial as any)?.classId));
               } catch {}
               if (classObjectId) {
                 const existingEnroll = await db
                   .collection("enrollments")
-                  .findOne({ userId: userDoc._id, classId: classObjectId });
+                  .findOne({ userId: (userDoc as any)._id, classId: classObjectId });
                 if (!existingEnroll) {
                   await db.collection("enrollments").insertOne({
-                    userId: userDoc._id,
+                    userId: (userDoc as any)._id,
                     classId: classObjectId,
                     status: "active",
                     attendedDates: [],
@@ -110,9 +114,14 @@ export async function POST(req: Request): Promise<Response> {
             }
           }
 
-          console.log(`[webhook] Trial converted and enrollment processed for ${email}`);
+          await db.collection("membershipHistory").insertOne({
+            email,
+            event: "converted",
+            timestamp: new Date(),
+            details: { source: "stripe_checkout", sessionId: session.id },
+          });
         } else {
-          // Existing user with no trial
+          // No trial found; activate membership
           await db.collection("users").updateOne(
             { email },
             { $set: { "membership.status": "active", "membership.joinedAt": new Date() } },
@@ -124,40 +133,36 @@ export async function POST(req: Request): Promise<Response> {
             event: "new_checkout_member",
             timestamp: new Date(),
           });
-
-          console.log(`[webhook] User activated: ${email}`);
         }
 
         break;
       }
 
-      // Invoice succeeded — renewal
       case "invoice.payment_succeeded": {
         const invoice = event.data.object as Stripe.Invoice;
-
         await db.collection("users").updateOne(
           { email },
           { $set: { "membership.status": "active", "membership.lastPaymentDate": new Date() } }
         );
-
         await db.collection("membershipHistory").insertOne({
           email,
           event: "payment_renewal",
           timestamp: new Date(),
-          details: { invoiceId: invoice.id, amount_paid: invoice.amount_paid, currency: invoice.currency },
+          details: {
+            invoiceId: invoice.id,
+            amount_paid: invoice.amount_paid,
+            currency: invoice.currency,
+          },
         });
-
-        console.log(`[webhook] Payment renewed for ${email}`);
-        // Insert a payment record for invoice payments
+        // lightweight payments record
         try {
-          const inv: any = event.data.object as any;
-          const amountPounds = Math.round(Number(inv.amount_paid || inv.amount_due || 0) / 100);
+          const amountPounds = Math.round(Number(invoice.amount_paid || invoice.amount_due || 0) / 100);
           await db.collection("payments").insertOne({
             email,
             amount: amountPounds,
-            currency: String(inv.currency || "gbp").toUpperCase(),
+            currency: String(invoice.currency || "gbp").toUpperCase(),
             payment_status: "paid",
-            payment_intent: inv.payment_intent || null,
+            payment_intent: (invoice as any).payment_intent || null,
             createdAt: new Date(),
           });
         } catch (e) {
@@ -166,20 +171,16 @@ export async function POST(req: Request): Promise<Response> {
         break;
       }
 
-      // Subscription canceled
       case "customer.subscription.deleted": {
         await db.collection("users").updateOne(
           { email },
           { $set: { "membership.status": "canceled", "membership.updatedAt": new Date() } }
         );
-
         await db.collection("membershipHistory").insertOne({
           email,
           event: "subscription_canceled",
           timestamp: new Date(),
         });
-
-        console.log(`[webhook] Subscription canceled for ${email}`);
         break;
       }
 
@@ -193,6 +194,3 @@ export async function POST(req: Request): Promise<Response> {
     return new NextResponse("Internal Server Error", { status: 500 });
   }
 }
-
-
-

@@ -28,8 +28,22 @@ export async function GET() {
       const user = users.find(
         (u) => u._id.toString() === trial.userId?.toString()
       );
+
+      const parentFullName = [trial?.parent?.firstName, trial?.parent?.lastName]
+        .filter(Boolean)
+        .join(" ") || trial.parentName || "";
+
+      const childFullName = [trial?.child?.firstName, trial?.child?.lastName]
+        .filter(Boolean)
+        .join(" ") || trial.childName || "";
+
+      const phone = trial.phone || trial.parentPhone || null;
+
       return {
         ...trial,
+        parentFullName,
+        childFullName,
+        phone,
         user: user
           ? { name: user.name, email: user.email, role: user.role }
           : null,

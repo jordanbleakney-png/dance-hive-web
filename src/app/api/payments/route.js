@@ -22,7 +22,10 @@ export async function GET() {
     // Users by email
     const users = await db
       .collection("users")
-      .find({ email: { $in: emails } }, { projection: { email: 1, name: 1, parentName: 1 } })
+      .find(
+        { email: { $in: emails } },
+        { projection: { email: 1, name: 1, parentName: 1, parent: 1 } }
+      )
       .toArray();
     const userByEmail = new Map(users.map((u) => [String(u.email).toLowerCase(), u]));
 
@@ -41,7 +44,14 @@ export async function GET() {
       const key = String(p.email).toLowerCase();
       const u = userByEmail.get(key);
       const t = trialByEmail.get(key);
-      let parentName = u?.name || u?.parentName || t?.parentName || null;
+      let parentName = null;
+      // Prefer nested user.parent first
+      if (u?.parent && (u.parent.firstName || u.parent.lastName)) {
+        parentName = `${u.parent.firstName || ""}${u.parent.firstName && u.parent.lastName ? " " : ""}${u.parent.lastName || ""}`.trim();
+      }
+      // Then legacy fields (name/parentName) if present
+      if (!parentName) parentName = u?.name || u?.parentName || null;
+      // Then nested trial parent
       if (!parentName && t?.parent && (t.parent.firstName || t.parent.lastName)) {
         parentName = `${t.parent.firstName || ""}${t.parent.firstName && t.parent.lastName ? " " : ""}${t.parent.lastName || ""}`.trim();
       }

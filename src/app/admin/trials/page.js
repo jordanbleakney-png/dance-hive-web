@@ -108,14 +108,22 @@ export default function AdminTrialsPage() {
           <tbody>
             {trials.map((t) => (
               <tr key={t._id} className="hover:bg-gray-50">
-                <td className="px-4 py-2 border">{t.childName}</td>
+                <td className="px-4 py-2 border">{
+                  [t?.child?.firstName, t?.child?.lastName]
+                    .filter(Boolean)
+                    .join(" ") || t.childName || ""
+                }</td>
                 <td className="px-4 py-2 border text-center">{t.childAge}</td>
                 <td className="px-4 py-2 border text-sm">{t.classId}</td>
-                <td className="px-4 py-2 border">{t.parentName}</td>
+                <td className="px-4 py-2 border">{
+                  [t?.parent?.firstName, t?.parent?.lastName]
+                    .filter(Boolean)
+                    .join(" ") || t.parentName || ""
+                }</td>
                 <td className="px-4 py-2 border text-blue-600 underline cursor-pointer">
                   <a href={`mailto:${t.email}`}>{t.email}</a>
                 </td>
-                <td className="px-4 py-2 border">{t.parentPhone}</td>
+                <td className="px-4 py-2 border">{t.phone || t.parentPhone || ""}</td>
 
                 {/* Status */}
                 <td className="px-4 py-2 border text-center">

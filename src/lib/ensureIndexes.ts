@@ -28,6 +28,10 @@ export async function ensureIndexes() {
     await history.createIndex({ email: 1 });
     await history.createIndex({ event: 1 });
     await history.createIndex({ timestamp: -1 });
+
+    // === PROCESSED EVENTS (idempotency) ===
+    const processed = db.collection("processedEvents");
+    await processed.createIndex({ createdAt: 1 }, { expireAfterSeconds: 14 * 24 * 60 * 60 });
     console.log("âœ… 'membershipHistory' indexes verified");
 
     console.log("ðŸŽ¯ All indexes confirmed successfully!");

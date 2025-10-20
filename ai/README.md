@@ -14,11 +14,13 @@ Purpose: Give contributors and AI tools a precise, up‑to‑date picture of Dan
 - Trial booking: parent selects a class and submits details.
 
 Required fields
+
 - Parent: firstName, lastName, email, phone
 - Child: firstName, lastName, age
 - Class: classId
 
 trialBookings schema (effective)
+
 - parent{}, child{}, classId, status (pending|attended|converted), createdAt, updatedAt, convertedAt (nullable)
 - For legacy data, flat fields (parentName, childName, childAge, phone) may also exist. APIs handle both shapes.
 

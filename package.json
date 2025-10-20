@@ -2,14 +2,17 @@
     "name":  "dance-hive-web",
     "version":  "1.0.0",
     "private":  true,
-    "scripts":  {
+  "scripts":  {
                     "dev":  "next dev",
                     "build":  "next build",
                     "start":  "next start",
                     "lint":  "next lint",
                     "create-indexes":  "node scripts/createIndexes.js",
                     "backfill":  "node scripts/backfillUsers.js",
-                    "normalize-payments":  "node scripts/normalizePayments.js"
+                    "normalize-payments":  "node scripts/normalizePayments.js",
+                    "migrate-users-names": "node scripts/migrateUsersNames.js",
+                    "normalize-users-shape": "node scripts/normalizeUsersShape.js",
+                    "cleanup-trials": "node scripts/cleanupTrialBookings.js"
                 },
     "dependencies":  {
                          "@auth/core":  "^0.41.0",
