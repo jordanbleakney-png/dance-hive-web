@@ -16,6 +16,7 @@ export default function DashboardPage() {
   const [firstTime, setFirstTime] = useState(false);
   const [onboardingComplete, setOnboardingComplete] = useState(null);
   const [overview, setOverview] = useState(null);
+  const [showWelcome, setShowWelcome] = useState(false);
 
   // Fetch the latest role and onboarding flag from MongoDB
   useEffect(() => {
@@ -31,6 +32,16 @@ export default function DashboardPage() {
         if (typeof data?.onboardingComplete !== "undefined") {
           setOnboardingComplete(Boolean(data.onboardingComplete));
         }
+        // Show welcome modal one time for newly converted customers
+        try {
+          const key = `dh_welcome_shown:${session.user.email}`;
+          const already = localStorage.getItem(key) === '1';
+          const isCustomerNoMembership = (data?.role === 'customer') && (!data?.membership || data?.membership?.status === 'none');
+          if (!already && isCustomerNoMembership) {
+            setShowWelcome(true);
+            localStorage.setItem(key, '1');
+          }
+        } catch {}
       } catch (err) {
         console.error("Failed to fetch user status:", err);
       } finally {
@@ -131,6 +142,23 @@ export default function DashboardPage() {
         {showSuccess && (
           <div className="bg-green-100 text-green-800 p-3 rounded-lg mb-4">
             Payment successful — your membership has been activated!
+          </div>
+        )}
+
+        {/* Welcome Modal for converted customers */}
+        {showWelcome && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+            <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full mx-4 p-6 text-center animate-fadeIn">
+              <h2 className="text-xl font-bold mb-3">You made it, {session?.user?.name || 'there'}! 🎉🐝</h2>
+              <p className="text-gray-700 mb-4">
+                Your trial class was just the beginning — we’d love for you to stay buzzing with us!<br/>
+                Get ready to bee-come an official member of the Hive! ✨
+              </p>
+              <div className="flex gap-3 justify-center">
+                <button onClick={handleUpgrade} className="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-5 py-2 rounded">Upgrade to Member</button>
+                <button onClick={() => setShowWelcome(false)} className="border border-gray-300 text-gray-700 px-5 py-2 rounded hover:bg-gray-50">Not now</button>
+              </div>
+            </div>
           </div>
         )}
 

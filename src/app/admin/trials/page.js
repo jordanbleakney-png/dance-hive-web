@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSession, signOut } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
@@ -10,6 +10,7 @@ export default function AdminTrialsPage() {
   const router = useRouter();
   const [trials, setTrials] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [classMap, setClassMap] = useState({});
 
   // 🔒 Redirect unauthenticated users
   useEffect(() => {
@@ -38,6 +39,22 @@ export default function AdminTrialsPage() {
 
     if (status === "authenticated") fetchTrials();
   }, [status]);
+
+  // Fetch classes to map classId -> name
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/classes");
+        if (!res.ok) return;
+        const data = await res.json();
+        const map = {};
+        (data || []).forEach((c) => {
+          if (c && c._id) map[String(c._id)] = c.name || String(c._id);
+        });
+        setClassMap(map);
+      } catch {}
+    })();
+  }, []);
 
   // 🔄 Function to update trial status
   async function updateStatus(id, newStatus) {
@@ -96,7 +113,7 @@ export default function AdminTrialsPage() {
             <tr>
               <th className="px-4 py-2 border">Child</th>
               <th className="px-4 py-2 border">Age</th>
-              <th className="px-4 py-2 border">Class ID</th>
+              <th className="px-4 py-2 border">Class</th>
               <th className="px-4 py-2 border">Parent</th>
               <th className="px-4 py-2 border">Email</th>
               <th className="px-4 py-2 border">Phone</th>
@@ -114,7 +131,7 @@ export default function AdminTrialsPage() {
                     .join(" ") || t.childName || ""
                 }</td>
                 <td className="px-4 py-2 border text-center">{t.childAge}</td>
-                <td className="px-4 py-2 border text-sm">{t.classId}</td>
+                <td className="px-4 py-2 border text-sm">{classMap[t.classId] || t.className || t.classId}</td>
                 <td className="px-4 py-2 border">{
                   [t?.parent?.firstName, t?.parent?.lastName]
                     .filter(Boolean)

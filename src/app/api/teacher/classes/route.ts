@@ -13,13 +13,11 @@ export async function GET() {
 
     const db = await getDb();
 
-    // For now, match classes by instructor = session.user.name, admins see all
-    const query = session.user.role === "admin" ? {} : { instructor: session.user.name };
-    const classes = await db.collection("classes").find(query).toArray();
+    // Show all classes to teachers and admins
+    const classes = await db.collection("classes").find({}).toArray();
     return NextResponse.json(classes);
   } catch (err) {
     console.error("[teacher/classes] GET error:", err);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
 }
-
