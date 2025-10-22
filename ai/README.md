@@ -42,10 +42,10 @@ trialBookings schema (effective)
 
 ## 4) Dashboards & UX
 
-- Member dashboard: shows role, hides “Upgrade to Member” when role === member or membership.status === active. Onboarding card uses a single “Update Details” button (password + personal/emergency/medical info) and includes a back link from settings.
+- Member dashboard: shows role, hides "Upgrade to Member" when role === member or membership.status === active. Onboarding card uses a single "Update Details" button (password + personal/emergency/medical info). Settings now also collects Child date of birth + Address.
 - Teacher dashboard: class list + register page backed by enrollments. Teachers can mark attendance (attendedDates on enrollments).
 - Admin dashboard:
-  - Users: search by email.
+  - Users: search by name/email/role; table shows Parent, Child, Email, Role, Membership, Phone. Clicking a row opens an inline modal with user, bookings and payments (via `/api/customers/[email]`).
   - Trials: update status (pending → attended → converted).
   - Payments: transactions (GBP), parent name from users/trials.
   - Classes: list shows student counts via enrollments; detail shows child name, age, parent contact and email.
@@ -54,7 +54,7 @@ trialBookings schema (effective)
 
 - classes: name, style, day, time, capacity, instructor
 - trialBookings: parent{}, child{}, classId, status, createdAt, updatedAt, convertedAt
-- users: email, password (hashed), role (trial|customer|member|teacher|admin), parentPhone/phone, childName, age, membership{status, plan, classId, timestamps}
+- users: email, password (hashed), role (trial|customer|member|teacher|admin), phone, parent{firstName,lastName}, child{firstName,lastName,dob?}, address{houseNumber,street,city,county,postcode}, membership{status, plan, classId, timestamps}
 - enrollments: userId, classId, status, attendedDates[], createdAt
 - payments: email, amount (pounds), currency (GBP), payment_status, payment_intent, createdAt
 - membershipHistory: conversions/renewals/cancellations with timestamps
@@ -66,7 +66,7 @@ trialBookings schema (effective)
 - Auth: NextAuth Credentials (JWT). `session.user.role` drives routing and access.
 - API: validate inputs (Zod where practical), return `NextResponse.json()`, and use the shared DB helper `getDb()`.
 - Stripe: Checkout for subscription; rely on invoices for payment records; keep handlers idempotent.
-- Styling: Tailwind v4; keep components accessible and minimal.
+- Styling: Tailwind v4; keep components accessible and minimal. Prefer ASCII logs (avoid emojis) to prevent mojibake on Windows terminals. If Atlas denies `collMod` while altering the TTL index, log once and continue.
 
 ## 7) Developer Utilities
 
@@ -80,3 +80,4 @@ trialBookings schema (effective)
 - Do keep `/api/register` disabled; don’t add public sign‑up.
 - Do standardize on `getDb()` for Mongo access.
 - Don’t log secrets or credentials; don’t store plaintext passwords.
+
