@@ -9,17 +9,31 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [role, setRole] = useState("customer");
   const [overview, setOverview] = useState(null);
+  const [showWelcome, setShowWelcome] = useState(false);
+  const [upgrading, setUpgrading] = useState(false);
 
   useEffect(() => {
     (async () => {
       try {
+        let roleFromStatus = role;
         if (session?.user?.email) {
           const s = await fetch(`/api/users/status?email=${session.user.email}`);
           const sd = await s.json();
-          if (sd?.role) setRole(sd.role);
+          if (sd?.role) {
+            setRole(sd.role);
+            roleFromStatus = sd.role;
+          }
         }
         const r = await fetch("/api/account/overview");
-        if (r.ok) setOverview(await r.json());
+        if (r.ok) {
+          const data = await r.json();
+          setOverview(data);
+          // Show welcome modal on every login until they upgrade
+          const isConvertedCustomer = roleFromStatus === "customer" && (!data?.membership || data?.membership?.status === "none");
+          if (isConvertedCustomer) {
+            setShowWelcome(true);
+          }
+        }
       } finally {
         setLoading(false);
       }
@@ -44,9 +58,40 @@ export default function DashboardPage() {
         .join(", ")
     : "";
 
+  const handleUpgrade = async () => {
+    try {
+      setUpgrading(true);
+      const res = await fetch("/api/checkout", { method: "POST" });
+      const data = await res.json();
+      if (data?.url) window.location.href = data.url;
+    } catch (e) {
+      console.error(e);
+      alert("Unable to start checkout. Please try again.");
+    } finally {
+      setUpgrading(false);
+    }
+  };
+
   return (
     <DashboardLayout>
       <div className="max-w-3xl mx-auto text-center mt-12">
+        {showWelcome && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+            <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full mx-4 p-6 text-center">
+              <h2 className="font-bold text-xl mb-3">You made it, {session?.user?.name || "there"}! 🎉🐝</h2>
+              <p className="text-gray-700 mb-4">
+                Your trial class was just the beginning — we’d love for you to stay buzzing with us!<br />
+                Get ready to bee-come an official member of the Hive! ✨
+              </p>
+              <div className="flex gap-3 justify-center">
+                <button onClick={handleUpgrade} disabled={upgrading} className="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-5 py-2 rounded disabled:opacity-60">
+                  {upgrading ? "Starting checkout..." : "Upgrade to Member"}
+                </button>
+                <button onClick={() => setShowWelcome(false)} className="border border-gray-300 text-gray-700 px-5 py-2 rounded hover:bg-gray-50">Not now</button>
+              </div>
+            </div>
+          </div>
+        )}
         <h1 className="text-2xl font-bold mb-3">Welcome back, {session?.user?.name || "User"}</h1>
         <p className="text-gray-600 mb-6">Your current role: <span className="font-medium">{role}</span></p>
 
@@ -168,6 +213,7 @@ export default function DashboardPage() {
     </DashboardLayout>
   );
 }
+
 
 
 
