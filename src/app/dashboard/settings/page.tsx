@@ -130,7 +130,7 @@ export default function SettingsPage() {
     <DashboardLayout>
       <div className="max-w-3xl mx-auto p-4">
         <div className="mb-4">
-          <Link href="/dashboard" className="text-blue-600 hover:underline">â† ← ← Back to Dashboard</Link>
+          <Link href="/dashboard" className="text-blue-600 hover:underline">← Back to Dashboard</Link>
         </div>
         <h1 className="text-2xl font-bold mb-6">Account Settings</h1>
 

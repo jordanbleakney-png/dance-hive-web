@@ -36,8 +36,8 @@ export default function DashboardPage() {
     );
   }
 
-  const childName = overview ? [overview.child?.firstName, overview.child?.lastName].filter(Boolean).join(" ") : "";
-  const parentName = overview ? [overview.parent?.firstName, overview.parent?.lastName].filter(Boolean).join(" ") : "";
+  const childName = overview ? [overview.child?.firstName, overview.child?.lastName].filter(Boolean).join(" | ") : "";
+  const parentName = overview ? [overview.parent?.firstName, overview.parent?.lastName].filter(Boolean).join(" | ") : "";
   const addressLine = overview
     ? [overview.address?.houseNumber, overview.address?.street, overview.address?.city, overview.address?.county, overview.address?.postcode]
         .filter(Boolean)
@@ -79,8 +79,36 @@ export default function DashboardPage() {
               </div>
               <div className="md:col-span-3">
                 <div className="text-gray-500">Emergency contact details</div>
-                <div className="font-medium">{[overview.emergencyContact?.name, overview.emergencyContact?.phone, overview.emergencyContact?.relation].filter(Boolean).join(" · ") || "Not provided"}</div>
+                <div className="font-medium">{[overview.emergencyContact?.name, overview.emergencyContact?.phone, overview.emergencyContact?.relation].filter(Boolean).join(" | ") || "Not provided"}</div>
               </div>
+            </div>
+          </div>
+        )}
+        {/* Enrolled Classes */}
+        {Array.isArray(overview?.enrollments) && overview.enrollments.length > 0 && (
+          <div className="max-w-3xl mx-auto bg-white rounded-xl shadow p-6 text-left mb-6">
+            <h2 className="text-lg font-semibold mb-3">Enrolled Classes</h2>
+            <div className="rounded-lg border border-gray-200 overflow-hidden">
+              <table className="min-w-full text-sm">
+                <thead className="bg-gray-100">
+                  <tr>
+                    <th className="px-4 py-2 border text-left">Class</th>
+                    <th className="px-4 py-2 border text-left">Schedule</th>
+                    <th className="px-4 py-2 border text-left">Teacher</th>
+                    <th className="px-4 py-2 border text-left">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {overview.enrollments.map((e) => (
+                    <tr key={e._id} className="hover:bg-gray-50">
+                      <td className="px-4 py-2 border">{e.class?.name || ""}</td>
+                      <td className="px-4 py-2 border">{[e.class?.day, e.class?.time].filter(Boolean).join(" | ")}</td>
+                      <td className="px-4 py-2 border">{e.class?.instructor || "TBA"}</td>
+                      <td className="px-4 py-2 border">{e.status || "active"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
         )}
@@ -110,7 +138,37 @@ export default function DashboardPage() {
             </div>
           </div>
         )}
+        {/* Recent Payments */}
+        {Array.isArray(overview?.payments) && overview.payments.length > 0 && (
+          <div className="max-w-3xl mx-auto bg-white rounded-xl shadow p-6 text-left mb-6">
+            <h2 className="text-lg font-semibold mb-3">Recent Payments</h2>
+            <div className="rounded-lg border border-gray-200 overflow-hidden">
+              <table className="min-w-full text-sm">
+                <thead className="bg-gray-100">
+                  <tr>
+                    <th className="px-4 py-2 border text-left">Date</th>
+                    <th className="px-4 py-2 border text-left">Amount</th>
+                    <th className="px-4 py-2 border text-left">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {overview.payments.map((p, i) => (
+                    <tr key={i} className="hover:bg-gray-50">
+                      <td className="px-4 py-2 border">{new Date(p.createdAt || p.timestamp || Date.now()).toLocaleString()}</td>
+                      <td className="px-4 py-2 border">{new Intl.NumberFormat('en-GB', { style: 'currency', currency: String(p.currency || 'GBP').toUpperCase(), minimumFractionDigits: 0 }).format(Number(p.amount) || 0)}</td>
+                      <td className="px-4 py-2 border">{p.payment_status || 'paid'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </div>
     </DashboardLayout>
   );
 }
+
+
+
+
