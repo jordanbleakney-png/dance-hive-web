@@ -17,15 +17,15 @@ declare global {
 
 if (process.env.NODE_ENV === "development") {
   if (!global._mongoClientPromise) {
-    console.log("ðŸ§© Creating new MongoDB client (dev mode)...");
+    console.log("[db] Creating new MongoDB client (dev mode)...");
     client = new MongoClient(uri!, options);
     global._mongoClientPromise = client.connect();
   } else {
-    console.log("â™»ï¸ Reusing existing MongoDB client (hot reload)");
+    console.log("[db] Reusing existing MongoDB client (hot reload)");
   }
   clientPromise = global._mongoClientPromise;
 } else {
-  console.log("ðŸš€ Creating MongoDB client (production)...");
+  console.log("[db] Creating MongoDB client (production)...");
   client = new MongoClient(uri!, options);
   clientPromise = client.connect();
 }
@@ -46,15 +46,16 @@ async function runEnsureIndexes() {
   if (hasEnsuredIndexes) return;
   hasEnsuredIndexes = true;
   try {
-    console.log("ðŸ” Importing ensureIndexes.ts...");
+    console.log("[db] Importing ensureIndexes.ts...");
     const { ensureIndexes } = await import("./ensureIndexes");
-    console.log("âœ… ensureIndexes.ts imported. Running index verification...");
+    console.log("[db] Running index verification...");
     await ensureIndexes();
-    console.log("ðŸŽ¯ Index verification complete.");
+    console.log("[db] Index verification complete.");
   } catch (err) {
-    console.error("âš ï¸ Failed to ensure indexes:", err);
+    console.error("[db] Failed to ensure indexes:", err);
   }
 }
 
 runEnsureIndexes();
+
 

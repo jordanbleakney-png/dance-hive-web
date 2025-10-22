@@ -1,42 +1,52 @@
 ﻿import clientPromise from "./dbConnect";
 
 export async function ensureIndexes() {
-  console.log("ðŸ§© ensureIndexes() started...");
+  console.log("[db] ensureIndexes() started...");
   try {
     const client = await clientPromise;
     const db = client.db(process.env.MONGODB_DB || "danceHive");
 
     // === USERS COLLECTION ===
     const users = db.collection("users");
-    const userIndexes = await users.indexes();
-    console.log(`ðŸ“¦ Found ${userIndexes.length} existing indexes in 'users'`);
-
     await users.createIndex({ email: 1 }, { unique: true, sparse: true });
     await users.createIndex({ "membership.status": 1 });
     await users.createIndex({ convertedAt: 1 });
-    console.log("âœ… 'users' indexes verified");
+    console.log("[db] 'users' indexes verified");
 
     // === TRIAL BOOKINGS COLLECTION ===
     const trials = db.collection("trialBookings");
     await trials.createIndex({ email: 1 });
     await trials.createIndex({ createdAt: 1 });
     await trials.createIndex({ convertedToMember: 1 });
-    console.log("âœ… 'trialBookings' indexes verified");
+    console.log("[db] 'trialBookings' indexes verified");
 
     // === MEMBERSHIP HISTORY COLLECTION ===
     const history = db.collection("membershipHistory");
     await history.createIndex({ email: 1 });
     await history.createIndex({ event: 1 });
     await history.createIndex({ timestamp: -1 });
+    console.log("[db] 'membershipHistory' indexes verified");
 
     // === PROCESSED EVENTS (idempotency) ===
     const processed = db.collection("processedEvents");
-    await processed.createIndex({ createdAt: 1 }, { expireAfterSeconds: 14 * 24 * 60 * 60 });
-    console.log("âœ… 'membershipHistory' indexes verified");
+    const ttl = 14 * 24 * 60 * 60; // seconds
+    try {
+      await processed.createIndex({ createdAt: 1 }, { name: "createdAt_1", expireAfterSeconds: ttl });
+    } catch (e: any) {
+      if (e?.codeName === "IndexOptionsConflict" || e?.code === 85) {
+        try {
+          await db.command({ collMod: "processedEvents", index: { name: "createdAt_1", expireAfterSeconds: ttl } });
+          console.log("[db] adjusted 'processedEvents' TTL to 14 days via collMod");
+        } catch (e2) {
+          console.warn("[db] unable to adjust TTL index on processedEvents:", e2);
+        }
+      } else {
+        throw e;
+      }
+    }
 
-    console.log("ðŸŽ¯ All indexes confirmed successfully!");
+    console.log("[db] All indexes confirmed successfully!");
   } catch (err) {
-    console.error("âš ï¸ Error while ensuring indexes:", err);
+    console.error("[db] Error while ensuring indexes:", err);
   }
 }
-

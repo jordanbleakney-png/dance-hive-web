@@ -1,0 +1,22 @@
+*** Begin Patch
+*** Update File: src/app/dashboard/page.js
+@@
+-        {/* Child details */}
+-        {overview?.child && (
++        {/* Child details (hidden while welcome modal is open) */}
++        {!showWelcome && overview?.child && (
+           <div className="max-w-3xl mx-auto bg-white rounded-xl shadow p-6 text-left mb-6">
+@@
+-        {/* Role-based Button or Message */}
+-        {!(role === "member" || membershipStatus === "active") ? (
++        {/* Role-based Button (hidden while welcome modal is open) */}
++        {!showWelcome && !(role === "member" || membershipStatus === "active") ? (
+           <button
+             onClick={handleUpgrade}
+             disabled={loading}
+             className="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-5 py-2 rounded transition disabled:opacity-50"
+           >
+             {loading ? "Loading..." : "Upgrade to Member"}
+           </button>
+         ) : null}
+*** End Patch

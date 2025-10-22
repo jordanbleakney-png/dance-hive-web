@@ -20,6 +20,9 @@ export async function GET() {
           medical: 1,
           emergencyContact: 1,
           membership: 1,
+          address: 1,
+          phone: 1,
+          email: 1,
         },
       }
     );
@@ -75,6 +78,9 @@ export async function GET() {
       medical: (user as any).medical || null,
       emergencyContact: (user as any).emergencyContact || null,
       membership: (user as any).membership || null,
+      address: (user as any).address || null,
+      phone: (user as any).phone || null,
+      email: (user as any).email || null,
       enrollments,
       payments,
     });
