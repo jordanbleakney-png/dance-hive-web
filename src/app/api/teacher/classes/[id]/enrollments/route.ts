@@ -107,3 +107,64 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
 }
+
+// POST /api/teacher/classes/[id]/enrollments
+// Body: { userId: string }
+// Creates an enrollment for the selected class with capacity enforcement.
+export async function POST(req: Request, { params }: { params: { id: string } }) {
+  try {
+    const session = await auth();
+    if (!session?.user?.role || (session.user.role !== "teacher" && session.user.role !== "admin")) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { userId } = await req.json();
+    if (!userId) {
+      return NextResponse.json({ error: "Missing userId" }, { status: 400 });
+    }
+
+    let classId: ObjectId;
+    let uId: ObjectId;
+    try {
+      classId = new ObjectId(params.id);
+      uId = new ObjectId(String(userId));
+    } catch {
+      return NextResponse.json({ error: "Invalid ids" }, { status: 400 });
+    }
+
+    const db = await getDb();
+
+    // If already enrolled, no-op
+    const existing = await db.collection("enrollments").findOne({ userId: uId, classId });
+    if (existing) {
+      return NextResponse.json({ message: "Already enrolled" }, { status: 200 });
+    }
+
+    // Capacity check
+    const cls = await db.collection("classes").findOne({ _id: classId });
+    if (!cls) return NextResponse.json({ error: "Class not found" }, { status: 404 });
+    const cap = Number((cls as any)?.capacity || 0);
+    if (cap > 0) {
+      const enrolledCount = await db
+        .collection("enrollments")
+        .countDocuments({ classId, status: "active" });
+      if (enrolledCount >= cap) {
+        return NextResponse.json(
+          { error: "Class is full", capacity: cap, enrolled: enrolledCount },
+          { status: 409 }
+        );
+      }
+    }
+
+    await db.collection("enrollments").updateOne(
+      { userId: uId, classId },
+      { $setOnInsert: { userId: uId, classId, status: "active", attendedDates: [], createdAt: new Date() } },
+      { upsert: true }
+    );
+
+    return NextResponse.json({ message: "Student enrolled" }, { status: 201 });
+  } catch (err) {
+    console.error("[teacher/classes/:id/enrollments] POST error:", err);
+    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+  }
+}

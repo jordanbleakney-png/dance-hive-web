@@ -1,7 +1,12 @@
-﻿import { getDb } from "@/lib/dbConnect";
+import { getDb } from "@/lib/dbConnect";
+import { auth } from "@/app/api/auth/[...nextauth]/route";
 
 export async function GET() {
   try {
+    const session = await auth();
+    if (!session?.user?.role || session.user.role !== "admin") {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+    }
     const db = await getDb();
     const allBookings = await db
       .collection("bookings")

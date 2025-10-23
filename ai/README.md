@@ -30,20 +30,20 @@ trialBookings schema (effective)
 - If user doesn't exist, create with role customer and temporary password (hashed).
 - The parent receives login instructions.
 
-## 3) Membership & Payments (Stripe)
+## 3) Membership & Payments (GoCardless plan)
 
-- Flow: user clicks "Become a Member" -> Stripe Checkout (subscription).
-- Webhook is the single source of truth for charges:
-  - invoice.payment_succeeded: activates membership, records membershipHistory, writes a payment record (in GBP pounds), and updates lastPaymentDate.
-  - checkout.session.completed: converts a matching trial (if found), upserts the user (name/phone/child details), enrolls the child in classId from the trial, and records membershipHistory. It no longer writes a payment row (to avoid double entries); renewals/charges are recorded via invoices.
-- Idempotency: processedEvents collection prevents double-handling.
-- payments collection: amount stored in pounds (e.g., 30), currency stored as GBP.
-- Admin payments page derives Parent Name by joining (case-insensitive) to users or latest trialBookings; if still unknown, it derives a readable fallback from the email local part.
+- Testing used Stripe, but production will use GoCardless (GC).
+- Flow: user clicks "Become a Member" -> GC hosted redirect to create customer + mandate -> create GC subscription.
+- Billing amount is computed from enrollmentCount (see Section 5/8):
+  - Linear (£30 × active classes) or tiered mapping (e.g., 1=£30, 2=£55, 3=£75).
+  - Update GC subscription amount when enrollments change (effective from next collection date). For mid‑cycle proration, optionally create a one‑off Payment.
+- Webhooks: record successful payments, activate/keep membership, and handle mandate or subscription failures.
+- payments collection: store amount in pounds, currency GBP; add provider identifiers (payment_id, mandate_id) when GC is integrated.
 
 ## 4) Dashboards & UX
 
 - Member dashboard: shows role, hides "Upgrade to Member" when role === member or membership.status === active. Onboarding card uses a single "Update Details" button (password + personal/emergency/medical info). Settings now also collects Child date of birth + Address.
-- Teacher dashboard: class list + register page backed by enrollments. Teachers can mark attendance (attendedDates on enrollments).
+- Teacher dashboard: class list + register page backed by enrollments. Teachers can mark attendance (attendedDates on enrollments). Register is weekly, pinned to the class weekday. Future weeks are view‑only (no marking).
 - Admin dashboard:
   - Users: search by name/email/role; table shows Parent, Child, Email, Role, Membership, Phone. Clicking a row opens an inline modal with user, bookings and payments (via `/api/customers/[email]`).
   - Trials: update status (pending -> attended -> converted).
@@ -56,6 +56,7 @@ trialBookings schema (effective)
 - trialBookings: parent{}, child{}, classId, status, createdAt, updatedAt, convertedAt
 - users: email, password (hashed), role (trial|customer|member|teacher|admin), phone, parent{firstName,lastName}, child{firstName,lastName,dob?}, address{houseNumber,street,city,county,postcode}, membership{status, plan, classId, timestamps}
 - enrollments: userId, classId, status, attendedDates[], createdAt
+  - Indexes: unique { userId:1, classId:1 }, plus { userId:1 }, { classId:1 }
 - payments: email, amount (pounds), currency (GBP), payment_status, payment_intent, createdAt
 - membershipHistory: conversions/renewals/cancellations with timestamps
 - processedEvents: Stripe webhook idempotency keys
@@ -65,7 +66,7 @@ trialBookings schema (effective)
 - No public sign-up: `/signup` removed; `/api/register` disabled.
 - Auth: NextAuth Credentials (JWT). `session.user.role` drives routing and access.
 - API: validate inputs (Zod where practical), return `NextResponse.json()`, and use the shared DB helper `getDb()`.
-- Stripe: Checkout for subscription; rely on invoices for payment records; keep handlers idempotent.
+- Payments: Stripe (testing) shifting to GoCardless (production). Keep handlers idempotent; use processedEvents for idempotency.
 - Styling: Tailwind v4; keep components accessible and minimal. Prefer ASCII logs (avoid emojis) to prevent mojibake on Windows terminals. If Atlas denies `collMod` while altering the TTL index, log once and continue.
 
 ## 7) Developer Utilities
@@ -81,3 +82,66 @@ trialBookings schema (effective)
 - Do standardize on `getDb()` for Mongo access.
 - Don't log secrets or credentials; don't store plaintext passwords.
 
+### Billing Implementation Notes (GC)
+- Keep enrollments as the source of truth for class participation.
+- Derive `enrollmentCount` from enrollments (active only) when updating subscriptions.
+- Store in users.membership:
+  - gocardless_customer_id, gocardless_mandate_id, gocardless_subscription_id
+  - status, optional cached enrollmentCount
+- Apply changes from next charge date (simple). For proration, create one‑off Payments.
+
+## 9) Migration From Stripe → GoCardless (Checklist)
+
+Prereqs
+- GoCardless sandbox account + access token
+- Webhook endpoint URL reachable from GC (ngrok in dev)
+- Decide pricing rule (linear £30 × count, or tiered map)
+- Policy for proration (recommend: apply changes next charge date; optionally create one‑off Payments)
+
+Environment variables (proposed)
+- `GOCARDLESS_ACCESS_TOKEN`
+- `GOCARDLESS_WEBHOOK_SECRET`
+- `GOCARDLESS_REDIRECT_SUCCESS_URL` (where GC returns to after mandate setup)
+- `GOCARDLESS_REDIRECT_CANCEL_URL`
+- Optional: `GOCARDLESS_CURRENCY` default `GBP`
+
+Data model additions (users.membership)
+- `gocardless_customer_id`
+- `gocardless_mandate_id`
+- `gocardless_subscription_id`
+- Optional cache: `enrollmentCount`, `nextChargeDate`
+
+API changes (high level)
+- Replace `/api/checkout`:
+  - Start GC Redirect Flow → return `redirect_url`
+  - On return, exchange for customer/mandate and create subscription with `amount = priceFor(enrollmentCount)` and monthly interval
+  - Persist GC IDs on user and write `membershipHistory`
+- Add `/api/webhook/gocardless` handler:
+  - Handle `payment_confirmed/payment_created`, `subscription_activated/updated/cancelled`, `mandate_*` failures
+  - Write `payments` with `{ provider: 'GoCardless', payment_id, mandate_id, amount, currency, createdAt }`
+  - Update `users.membership.status` and `lastPaymentDate` as needed
+  - Use existing `processedEvents` idempotency guard
+
+Enrollment-driven updates
+- After any enrollment add/remove:
+  - Recompute active `enrollmentCount`
+  - Compute new amount and update GC subscription amount (effective next collection)
+  - Optionally create one‑off Payment for proration
+  - Store cached `membership.enrollmentCount`
+
+UI notes
+- Member dashboard: show enrollment count and next charge amount/date (if cached)
+- Admin modal already shows/edit enrollments; after change, optionally trigger a billing sync endpoint
+
+Cutover steps
+1) Deploy webhook endpoint for GC and verify signature locally
+2) Implement redirect flow + subscription creation in sandbox
+3) Switch `/api/checkout` to GC path; keep Stripe path disabled
+4) Update README billing notes and ops runbook
+5) QA: mandate created → subscription created → payment confirmed webhook → payments row written → membership active
+6) Optional migration: keep Stripe payments as read‑only history; do not mix providers for the same user
+
+Ops/failure handling
+- Mandate failure or bank details changed → pause membership and notify admin
+- Payment failure → keep membership pending and surface in admin payments
+- Retries: GC will retry; webhook handler must be idempotent

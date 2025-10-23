@@ -19,7 +19,7 @@ export async function GET(_req, context) {
 
     if (!user) {
       return new Response(
-        JSON.stringify({ user: null, enrollments: [], payments: [] }),
+        JSON.stringify({ user: null, enrollments: [], payments: [], enrollmentCount: 0 }),
         { status: 200 }
       );
     }
@@ -45,6 +45,7 @@ export async function GET(_req, context) {
             _id: 1,
             status: 1,
             createdAt: 1,
+            classId: 1,
             class: {
               _id: "$class._id",
               name: "$class.name",
@@ -57,8 +58,9 @@ export async function GET(_req, context) {
       ])
       .toArray();
 
+    const enrollmentCount = Array.isArray(enrollments) ? enrollments.length : 0;
     return new Response(
-      JSON.stringify({ user, enrollments, payments }),
+      JSON.stringify({ user, enrollments, payments, enrollmentCount }),
       { status: 200 }
     );
   } catch (error) {
@@ -140,11 +142,12 @@ export async function PATCH(req, context) {
         { $match: { userId: user?._id } },
         { $lookup: { from: "classes", localField: "classId", foreignField: "_id", as: "class" } },
         { $unwind: { path: "$class", preserveNullAndEmptyArrays: true } },
-        { $project: { _id: 1, status: 1, createdAt: 1, class: { _id: "$class._id", name: "$class.name", day: "$class.day", time: "$class.time", instructor: "$class.instructor" } } },
+        { $project: { _id: 1, status: 1, createdAt: 1, classId: 1, class: { _id: "$class._id", name: "$class.name", day: "$class.day", time: "$class.time", instructor: "$class.instructor" } } },
       ])
       .toArray();
 
-    return new Response(JSON.stringify({ user, enrollments, payments }), { status: 200 });
+    const enrollmentCount = Array.isArray(enrollments) ? enrollments.length : 0;
+    return new Response(JSON.stringify({ user, enrollments, payments, enrollmentCount }), { status: 200 });
   } catch (error) {
     console.error("[customers:email] PATCH error:", error);
     return new Response(JSON.stringify({ error: "Internal server error" }), { status: 500 });

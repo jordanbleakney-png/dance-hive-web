@@ -27,6 +27,15 @@ export async function ensureIndexes() {
     await history.createIndex({ timestamp: -1 });
     console.log("[db] 'membershipHistory' indexes verified");
 
+    // === ENROLLMENTS COLLECTION ===
+    const enrollments = db.collection("enrollments");
+    // Prevent duplicate enrollment of a user into the same class
+    await enrollments.createIndex({ userId: 1, classId: 1 }, { unique: true });
+    // Helpful single-field indexes for common queries
+    await enrollments.createIndex({ userId: 1 });
+    await enrollments.createIndex({ classId: 1 });
+    console.log("[db] 'enrollments' indexes verified");
+
     // === PROCESSED EVENTS (idempotency) ===
     const processed = db.collection("processedEvents");
     const ttl = 14 * 24 * 60 * 60; // seconds

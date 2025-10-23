@@ -7,14 +7,64 @@ import DashboardLayout from "@/components/DashboardLayout";
 export default function TeacherClassRegisterPage() {
   const { id } = useParams();
   const [data, setData] = useState<{ enrollments: any[]; trials?: any[] } | null>(null);
+  const [cls, setCls] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const [selectedDate, setSelectedDate] = useState<string>(todayIso);
+
+  const dayToIndex: Record<string, number> = {
+    Sunday: 0,
+    Monday: 1,
+    Tuesday: 2,
+    Wednesday: 3,
+    Thursday: 4,
+    Friday: 5,
+    Saturday: 6,
+  };
+
+  function isDateOnClassDay(dateStr: string, classDay?: string) {
+    if (!dateStr || !classDay) return true; // if unknown, don't block
+    const d = new Date(dateStr);
+    return d.getDay() === dayToIndex[classDay] ?? d.getDay();
+  }
+
+  function nextOccurrenceOfClassDay(from: Date, classDay?: string) {
+    if (!classDay) return from;
+    const target = dayToIndex[classDay];
+    if (typeof target !== 'number') return from;
+    const d = new Date(from);
+    const diff = (target - d.getDay() + 7) % 7;
+    d.setDate(d.getDate() + (diff === 0 ? 0 : diff));
+    return d;
+  }
+
+  function startOfWeek(date: Date) {
+    const d = new Date(date);
+    const day = d.getDay(); // 0-6 (Sun-Sat)
+    d.setHours(0,0,0,0);
+    d.setDate(d.getDate() - day);
+    return d;
+  }
+
+  function occurrenceThisWeek(reference: Date, classDay?: string) {
+    if (!classDay) return reference;
+    const sow = startOfWeek(reference);
+    const idx = dayToIndex[classDay];
+    const d = new Date(sow);
+    d.setDate(sow.getDate() + (typeof idx === 'number' ? idx : 0));
+    return d;
+  }
 
   async function load() {
     try {
-      const res = await fetch(`/api/teacher/classes/${id}/enrollments`);
-      if (!res.ok) throw new Error("Failed to load enrollments");
-      setData(await res.json());
+      const [enrRes, clsRes] = await Promise.all([
+        fetch(`/api/teacher/classes/${id}/enrollments`),
+        fetch(`/api/classes/${id}`),
+      ]);
+      if (!enrRes.ok) throw new Error("Failed to load enrollments");
+      if (clsRes.ok) setCls(await clsRes.json());
+      setData(await enrRes.json());
     } catch (e: any) {
       setError(e?.message || "Unable to load class data");
     } finally {
@@ -23,20 +73,44 @@ export default function TeacherClassRegisterPage() {
   }
 
   useEffect(() => {
-    if (id) load();
+    if (id) {
+      load();
+    }
   }, [id]);
+
+  // When class meta loads, if selectedDate is not a class day, snap to next occurrence
+  useEffect(() => {
+    if (!cls) return;
+    // Snap initial date to this week's occurrence of the class day
+    const thisWeek = occurrenceThisWeek(new Date(), cls?.day).toISOString().slice(0, 10);
+    setSelectedDate(thisWeek);
+  }, [cls]);
 
   const markAttendance = async (userId: string) => {
     try {
       const res = await fetch(`/api/teacher/classes/${id}/attendance`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId }),
+        body: JSON.stringify({ userId, date: selectedDate }),
       });
       if (!res.ok) throw new Error("Failed to mark attendance");
       await load();
     } catch (e) {
       alert("Failed to mark attendance");
+    }
+  };
+
+  const unmarkAttendance = async (userId: string) => {
+    try {
+      const res = await fetch(`/api/teacher/classes/${id}/attendance`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, date: selectedDate }),
+      });
+      if (!res.ok) throw new Error("Failed to unmark attendance");
+      await load();
+    } catch (e) {
+      alert("Failed to unmark attendance");
     }
   };
 
@@ -57,10 +131,54 @@ export default function TeacherClassRegisterPage() {
   return (
     <DashboardLayout allowedRoles={["teacher", "admin"]}>
       <div className="max-w-4xl mx-auto p-6">
-        <h1 className="text-2xl font-bold mb-6">Class Register</h1>
+        <h1 className="text-2xl font-bold mb-1">{cls?.name ? `${cls.name} Register` : 'Class Register'}</h1>
+        {cls && (
+          <p className="text-sm text-gray-600 mb-6">{cls?.day} at {cls?.time}</p>
+        )}
         {loading && <p>Loading...</p>}
         {error && <p className="text-red-600">{error}</p>}
         {data && (
+          <>
+          <div className="flex items-center gap-3 mb-4">
+            <label className="text-sm text-gray-600">Register date</label>
+            <span className="inline-block border rounded px-2 py-1 text-sm bg-white">
+              {new Date(selectedDate).toLocaleDateString('en-GB')}
+            </span>
+            <button
+              className="text-sm px-2 py-1 border rounded hover:bg-gray-50"
+              onClick={() => {
+                const thisWeek = occurrenceThisWeek(new Date(), cls?.day).toISOString().slice(0,10);
+                setSelectedDate(thisWeek);
+              }}
+            >
+              Today
+            </button>
+            <button
+              className="text-sm px-2 py-1 border rounded hover:bg-gray-50"
+              aria-label="Previous week"
+              onClick={() => {
+                const d = new Date(selectedDate);
+                d.setDate(d.getDate() - 7);
+                const adj = occurrenceThisWeek(d, cls?.day);
+                setSelectedDate(adj.toISOString().slice(0,10));
+              }}
+            >
+              ‹
+            </button>
+            <button
+              className="text-sm px-2 py-1 border rounded hover:bg-gray-50"
+              aria-label="Next week"
+              onClick={() => {
+                const d = new Date(selectedDate);
+                d.setDate(d.getDate() + 7);
+                const adj = occurrenceThisWeek(d, cls?.day);
+                setSelectedDate(adj.toISOString().slice(0,10));
+              }}
+            >
+              ›
+            </button>
+          </div>
+
           <table className="min-w-full border border-gray-200">
             <thead className="bg-gray-100">
               <tr>
@@ -68,7 +186,8 @@ export default function TeacherClassRegisterPage() {
                 <th className="px-4 py-2 border">Parent</th>
                 <th className="px-4 py-2 border">Parent Contact</th>
                 <th className="px-4 py-2 border">Medical</th>
-                <th className="px-4 py-2 border">Attended</th>
+                <th className="px-4 py-2 border">Attended (selected)</th>
+                <th className="px-4 py-2 border">Total Attended</th>
                 <th className="px-4 py-2 border">Action</th>
               </tr>
             </thead>
@@ -78,25 +197,41 @@ export default function TeacherClassRegisterPage() {
                   .filter(Boolean)
                   .join(" ") || e?.user?.name || "-";
                 const contact = e?.user?.phone || e?.user?.parentPhone || "-";
+                const dates: string[] = (e.attendedDates || []).map((d: string) => String(d).slice(0,10));
+                const attendedSelected = dates.includes(selectedDate);
+                const isFutureWeek = startOfWeek(new Date(selectedDate)) > startOfWeek(new Date());
                 return (
                 <tr key={e._id} className="hover:bg-gray-50">
                   <td className="px-4 py-2 border">{childFull}</td>
                   <td className="px-4 py-2 border">{[e?.user?.parent?.firstName, e?.user?.parent?.lastName].filter(Boolean).join(" ") || "-"}</td>
                   <td className="px-4 py-2 border">{contact}</td>
                   <td className="px-4 py-2 border">{e.user?.medical || "-"}</td>
+                  <td className="px-4 py-2 border">{attendedSelected ? "Yes" : "No"}</td>
                   <td className="px-4 py-2 border">{(e.attendedDates || []).length}</td>
                   <td className="px-4 py-2 border text-center">
-                    <button
-                      onClick={() => markAttendance(e.userId)}
-                      className="bg-green-600 hover:bg-green-700 text-white text-sm px-3 py-1 rounded-md"
-                    >
-                      Mark Today
-                    </button>
+                    {attendedSelected ? (
+                      <button
+                        onClick={() => unmarkAttendance(e.userId)}
+                        disabled={isFutureWeek}
+                        className={`text-sm px-3 py-1 rounded-md ${isFutureWeek ? 'bg-gray-100 text-gray-400 border cursor-not-allowed' : 'bg-gray-200 hover:bg-gray-300 text-gray-800'}`}
+                      >
+                        Unmark
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => markAttendance(e.userId)}
+                        disabled={isFutureWeek}
+                        className={`text-sm px-3 py-1 rounded-md ${isFutureWeek ? 'bg-green-100 text-green-300 border cursor-not-allowed' : 'bg-green-600 hover:bg-green-700 text-white'}`}
+                      >
+                        Mark
+                      </button>
+                    )}
                   </td>
                 </tr>
               )})}
             </tbody>
           </table>
+          </>
         )}
 
         {data?.trials && data.trials.length > 0 && (

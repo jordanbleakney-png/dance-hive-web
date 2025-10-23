@@ -62,6 +62,15 @@ async function createIndexes() {
     console.log("[indexes] Created indexes for 'membershipHistory'");
 
     // ================================
+    // ENROLLMENTS COLLECTION
+    // ================================
+    const enrollments = db.collection("enrollments");
+    await enrollments.createIndex({ userId: 1, classId: 1 }, { unique: true });
+    await enrollments.createIndex({ userId: 1 });
+    await enrollments.createIndex({ classId: 1 });
+    console.log("[indexes] Created indexes for 'enrollments'");
+
+    // ================================
     // PROCESSED EVENTS COLLECTION (Idempotency)
     // ================================
     const processed = db.collection("processedEvents");
@@ -85,4 +94,3 @@ async function createIndexes() {
 }
 
 createIndexes();
-

@@ -14,6 +14,9 @@ export default function AdminUsersPage() {
   const [editMode, setEditMode] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState(null);
+  const [classes, setClasses] = useState([]);
+  const [enrollEdit, setEnrollEdit] = useState(false);
+  const [addClassId, setAddClassId] = useState("");
 
   useEffect(() => {
     (async () => {
@@ -40,6 +43,12 @@ export default function AdminUsersPage() {
       if (!res.ok) throw new Error(data.error || "Failed to load user");
       setDetail(data);
       setEditMode(false);
+      // Load classes for enrollment editing
+      try {
+        // Use admin endpoint to retrieve classes with current student counts
+        const resC = await fetch("/api/admin/classes");
+        if (resC.ok) setClasses(await resC.json());
+      } catch {}
     } catch (e) {
       setDetail({ error: e.message || String(e) });
     } finally {
@@ -106,6 +115,67 @@ export default function AdminUsersPage() {
       alert(e.message || String(e));
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function addEnrollment() {
+    if (!detail?.user?._id || !addClassId) return;
+    try {
+      const res = await fetch("/api/enrollments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: detail.user._id, classId: addClassId }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error || "Failed to add enrollment");
+      }
+      // refresh detail
+      await openUserDetails(detail.user.email);
+      setAddClassId("");
+    } catch (e) {
+      alert(e.message || String(e));
+    }
+  }
+
+  async function removeEnrollment(classId) {
+    if (!detail?.user?._id || !classId) return;
+    if (!confirm("Remove this enrollment?")) return;
+    try {
+      const res = await fetch("/api/enrollments", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: detail.user._id, classId }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error || "Failed to remove enrollment");
+      }
+      await openUserDetails(detail.user.email);
+    } catch (e) {
+      alert(e.message || String(e));
+    }
+  }
+
+  async function changeEnrollment(oldClassId, newClassId) {
+    if (!newClassId || newClassId === oldClassId) return;
+    // Add new, then remove old
+    try {
+      const res = await fetch("/api/enrollments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: detail.user._id, classId: newClassId }),
+      });
+      if (!res.ok) throw new Error("Failed to enroll in new class");
+      const resDel = await fetch("/api/enrollments", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: detail.user._id, classId: oldClassId }),
+      });
+      if (!resDel.ok) throw new Error("Failed to remove old enrollment");
+      await openUserDetails(detail.user.email);
+    } catch (e) {
+      alert(e.message || String(e));
     }
   }
 
@@ -326,6 +396,10 @@ export default function AdminUsersPage() {
                                     <div className="text-gray-500 text-sm">Membership</div>
                                     <div className="font-medium">{detail.user?.membership?.status || "none"}</div>
                                   </div>
+                                  <div>
+                                    <div className="text-gray-500 text-sm">Classes</div>
+                                    <div className="font-medium">{(Array.isArray(detail?.enrollments) ? detail.enrollments.length : (detail?.enrollmentCount ?? 0))}</div>
+                                  </div>
                                 </>
                               );
                             })()}
@@ -391,7 +465,12 @@ export default function AdminUsersPage() {
                       </div>
 
                       <div className="bg-gray-50 border rounded p-4">
-                        <h3 className="font-semibold mb-2">Enrolled Classes</h3>
+                        <div className="flex items-center justify-between mb-2">
+                          <h3 className="font-semibold">Enrolled Classes</h3>
+                          <button className="text-sm text-blue-600 hover:underline" onClick={() => setEnrollEdit((v)=>!v)}>
+                            {enrollEdit ? "Done" : "Edit"}
+                          </button>
+                        </div>
                         {Array.isArray(detail.enrollments) && detail.enrollments.length > 0 ? (
                           <div className="rounded border border-gray-200 overflow-hidden">
                             <table className="min-w-full text-sm">
@@ -401,15 +480,46 @@ export default function AdminUsersPage() {
                                   <th className="px-3 py-2 border text-left">Schedule</th>
                                   <th className="px-3 py-2 border text-left">Teacher</th>
                                   <th className="px-3 py-2 border text-left">Status</th>
+                                  {enrollEdit && <th className="px-3 py-2 border text-left">Actions</th>}
                                 </tr>
                               </thead>
                               <tbody>
                                 {detail.enrollments.map((e) => (
                                   <tr key={e._id} className="hover:bg-gray-50">
-                                    <td className="px-3 py-2 border">{e.class?.name || ""}</td>
+                                    <td className="px-3 py-2 border">
+                                      {enrollEdit ? (
+                                        <select
+                                          className="border rounded px-2 py-1 text-sm"
+                                          defaultValue={String(e.class?._id || "")}
+                                          onChange={(ev) => changeEnrollment(String(e.class?._id || e.classId), ev.target.value)}
+                                        >
+                                          <option value="">Select class</option>
+                                          {classes.map((c) => {
+                                            const enrolled = Number(c.studentCount || 0);
+                                            const cap = c.capacity != null ? String(c.capacity) : "∞";
+                                            const label = `${c.name} — ${c.day || ''} ${c.time || ''} (${enrolled}/${cap})`;
+                                            return (
+                                              <option key={c._id} value={c._id}>{label}</option>
+                                            );
+                                          })}
+                                        </select>
+                                      ) : (
+                                        e.class?.name || ""
+                                      )}
+                                    </td>
                                     <td className="px-3 py-2 border">{[e.class?.day, e.class?.time].filter(Boolean).join(" | ")}</td>
                                     <td className="px-3 py-2 border">{e.class?.instructor || "TBA"}</td>
                                     <td className="px-3 py-2 border capitalize">{e.status || "active"}</td>
+                                    {enrollEdit && (
+                                      <td className="px-3 py-2 border">
+                                        <button
+                                          className="text-sm text-red-600 hover:underline"
+                                          onClick={() => removeEnrollment(String(e.class?._id || e.classId))}
+                                        >
+                                          Remove
+                                        </button>
+                                      </td>
+                                    )}
                                   </tr>
                                 ))}
                               </tbody>
@@ -417,6 +527,33 @@ export default function AdminUsersPage() {
                           </div>
                         ) : (
                           <p className="text-sm text-gray-600">No enrollments yet.</p>
+                        )}
+
+                        {enrollEdit && (
+                          <div className="mt-3 flex items-center gap-2">
+                            <select
+                              className="border rounded px-2 py-1 text-sm"
+                              value={addClassId}
+                              onChange={(e)=> setAddClassId(e.target.value)}
+                            >
+                              <option value="">Add to class…</option>
+                              {classes.map((c) => {
+                                const enrolled = Number(c.studentCount || 0);
+                                const cap = c.capacity != null ? String(c.capacity) : "∞";
+                                const label = `${c.name} — ${c.day || ''} ${c.time || ''} (${enrolled}/${cap})`;
+                                return (
+                                  <option key={c._id} value={c._id}>{label}</option>
+                                );
+                              })}
+                            </select>
+                            <button
+                              className="text-sm bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded disabled:opacity-60"
+                              disabled={!addClassId}
+                              onClick={addEnrollment}
+                            >
+                              Add
+                            </button>
+                          </div>
                         )}
                       </div>
 
