@@ -2,7 +2,7 @@
 import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
-import { getDb } from "@/lib/dbConnect";
+import { MongoClient } from "mongodb";
 
 // Fix __dirname for ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -13,7 +13,7 @@ dotenv.config({ path: path.resolve(__dirname, "../.env.local") });
 
 const uri = process.env.MONGODB_URI;
 if (!uri) {
-  throw new Error("❌ MONGODB_URI is not defined in environment variables!");
+  throw new Error("MONGODB_URI is not defined in environment variables!");
 }
 
 const client = new MongoClient(uri);
@@ -23,25 +23,25 @@ async function createIndexes() {
     await client.connect();
     const db = client.db(process.env.MONGODB_DB || "danceHive");
 
-    console.log("✅ Connected to MongoDB");
+    console.log("[indexes] Connected to MongoDB");
 
     // ================================
     // USERS COLLECTION
     // ================================
     const users = db.collection("users");
 
-    // 🧹 Cleanup invalid or duplicate emails before creating unique index
-    console.log("🧹 Cleaning up invalid or empty emails...");
+    // Cleanup invalid or empty emails before creating unique index
+    console.log("[indexes] Cleaning up invalid or empty emails...");
     const cleanupResult = await users.deleteMany({
       $or: [{ email: "" }, { email: null }, { email: { $exists: false } }],
     });
-    console.log(`🧹 Removed ${cleanupResult.deletedCount} invalid user(s).`);
+    console.log(`[indexes] Removed ${cleanupResult.deletedCount} invalid user(s).`);
 
     // Create indexes for users
     await users.createIndex({ email: 1 }, { unique: true, sparse: true });
     await users.createIndex({ "membership.status": 1 });
     await users.createIndex({ convertedAt: 1 });
-    console.log("🧩 Created indexes for 'users'");
+    console.log("[indexes] Created indexes for 'users'");
 
     // ================================
     // TRIAL BOOKINGS COLLECTION
@@ -50,7 +50,7 @@ async function createIndexes() {
     await trials.createIndex({ email: 1 }, { unique: false });
     await trials.createIndex({ createdAt: 1 });
     await trials.createIndex({ convertedToMember: 1 });
-    console.log("🧩 Created indexes for 'trialBookings'");
+    console.log("[indexes] Created indexes for 'trialBookings'");
 
     // ================================
     // MEMBERSHIP HISTORY COLLECTION
@@ -59,7 +59,7 @@ async function createIndexes() {
     await history.createIndex({ email: 1 });
     await history.createIndex({ event: 1 });
     await history.createIndex({ timestamp: -1 });
-    console.log("🧩 Created indexes for 'membershipHistory'");
+    console.log("[indexes] Created indexes for 'membershipHistory'");
 
     // ================================
     // PROCESSED EVENTS COLLECTION (Idempotency)
@@ -73,15 +73,16 @@ async function createIndexes() {
       }
     );
 
-    console.log("🧩 Created TTL index for 'processedEvents' (30 days)");
+    console.log("[indexes] Created TTL index for 'processedEvents' (30 days)");
 
-    console.log("✅ All indexes created successfully!");
+    console.log("[indexes] All indexes created successfully!");
   } catch (err) {
-    console.error("❌ Error creating indexes:", err);
+    console.error("[indexes] Error creating indexes:", err);
   } finally {
     await client.close();
-    console.log("🔌 Connection closed.");
+    console.log("[indexes] Connection closed.");
   }
 }
 
 createIndexes();
+

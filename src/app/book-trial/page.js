@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
@@ -19,7 +19,7 @@ export default function BookTrialPage() {
   });
   const [loading, setLoading] = useState(false);
 
-  // âœ… Fetch all available classes from MongoDB
+  // Fetch all available classes from MongoDB
   useEffect(() => {
     async function loadClasses() {
       try {
@@ -42,12 +42,12 @@ export default function BookTrialPage() {
     setForm((prev) => ({ ...prev, classId: cid }));
   }, [searchParams]);
 
-  // âœ… Handle form input
+  // Handle form input
   function handleChange(e) {
     setForm({ ...form, [e.target.name]: e.target.value });
   }
 
-  // âœ… Handle submission
+  // Handle submission
   async function handleSubmit(e) {
     e.preventDefault();
     setLoading(true);
@@ -86,9 +86,7 @@ export default function BookTrialPage() {
   return (
     <div className="min-h-screen bg-gray-50 p-6 flex justify-center">
       <div className="bg-white shadow-lg rounded-2xl p-8 w-full max-w-2xl">
-        <h1 className="text-3xl font-bold mb-4 text-center text-blue-600">
-          Book Your Free Trial Class
-        </h1>
+        <h1 className="text-3xl font-bold mb-4 text-center text-blue-600">Book Your Free Trial Class</h1>
         <p className="text-gray-600 text-center mb-8">
           Fill in your details below to book your childs free trial lesson.
         </p>
@@ -212,3 +210,4 @@ export default function BookTrialPage() {
     </div>
   );
 }
+

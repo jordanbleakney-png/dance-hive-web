@@ -11,6 +11,9 @@ export default function AdminUsersPage() {
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detail, setDetail] = useState(null);
+  const [editMode, setEditMode] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState(null);
 
   useEffect(() => {
     (async () => {
@@ -36,10 +39,73 @@ export default function AdminUsersPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to load user");
       setDetail(data);
+      setEditMode(false);
     } catch (e) {
       setDetail({ error: e.message || String(e) });
     } finally {
       setDetailLoading(false);
+    }
+  }
+
+  function startEdit() {
+    if (!detail?.user) return;
+    const u = detail.user;
+    setForm({
+      phone: u.phone || "",
+      parent: { firstName: u.parent?.firstName || "", lastName: u.parent?.lastName || "" },
+      child: {
+        firstName: u.child?.firstName || "",
+        lastName: u.child?.lastName || "",
+        dob: u.child?.dob ? new Date(u.child.dob).toISOString().slice(0, 10) : "",
+      },
+      address: {
+        houseNumber: u.address?.houseNumber || "",
+        street: u.address?.street || "",
+        city: u.address?.city || "",
+        county: u.address?.county || "",
+        postcode: u.address?.postcode || "",
+      },
+      emergencyContact: {
+        name: u.emergencyContact?.name || "",
+        phone: u.emergencyContact?.phone || "",
+        relation: u.emergencyContact?.relation || "",
+      },
+      medical: u.medical || "",
+    });
+    setEditMode(true);
+  }
+
+  function updateField(path, value) {
+    setForm((prev) => {
+      const next = { ...prev };
+      const parts = path.split(".");
+      let cur = next;
+      for (let i = 0; i < parts.length - 1; i++) {
+        cur[parts[i]] = { ...(cur[parts[i]] || {}) };
+        cur = cur[parts[i]];
+      }
+      cur[parts[parts.length - 1]] = value;
+      return next;
+    });
+  }
+
+  async function saveEdits() {
+    if (!detail?.user?.email || !form) return;
+    try {
+      setSaving(true);
+      const res = await fetch(`/api/customers/${encodeURIComponent(detail.user.email)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to save changes");
+      setDetail(data);
+      setEditMode(false);
+    } catch (e) {
+      alert(e.message || String(e));
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -149,12 +215,22 @@ export default function AdminUsersPage() {
                 >
                   <div className="flex items-center justify-between mb-4">
                     <h2 className="text-lg font-semibold">User Details</h2>
-                    <button
-                      className="text-sm text-gray-600 hover:underline"
-                      onClick={() => setDetailOpen(false)}
-                    >
-                      Close
-                    </button>
+                    <div className="flex items-center gap-3">
+                      {!editMode ? (
+                        <button onClick={startEdit} className="text-sm text-blue-600 hover:underline">Edit</button>
+                      ) : (
+                        <>
+                          <button onClick={() => setEditMode(false)} className="text-sm text-gray-600 hover:underline">Cancel</button>
+                          <button onClick={saveEdits} disabled={saving} className="text-sm text-white bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded disabled:opacity-60">{saving ? "Saving..." : "Save"}</button>
+                        </>
+                      )}
+                      <button
+                        className="text-sm text-gray-600 hover:underline"
+                        onClick={() => setDetailOpen(false)}
+                      >
+                        Close
+                      </button>
+                    </div>
                   </div>
 
                   {detailLoading && <p>Loading...</p>}
@@ -165,71 +241,212 @@ export default function AdminUsersPage() {
                   {!detailLoading && detail && !detail.error && (
                     <div className="space-y-4">
                       <div className="bg-gray-50 border rounded p-4">
-                        <p>
-                          <span className="font-semibold">Email:</span>{" "}
-                          {detail.user?.email}
-                        </p>
-                        <p>
-                          <span className="font-semibold">Role:</span>{" "}
-                          {detail.user?.role || "customer"}
-                        </p>
-                        <p>
-                          <span className="font-semibold">Phone:</span>{" "}
-                          {detail.user?.phone || "-"}
-                        </p>
-                        <p>
-                          <span className="font-semibold">Parent:</span>{" "}
-                          {[
-                            detail.user?.parent?.firstName,
-                            detail.user?.parent?.lastName,
-                          ]
-                            .filter(Boolean)
-                            .join(" ") || "-"}
-                        </p>
-                        <p>
-                          <span className="font-semibold">Child:</span>{" "}
-                          {[
-                            detail.user?.child?.firstName,
-                            detail.user?.child?.lastName,
-                          ]
-                            .filter(Boolean)
-                            .join(" ") || "-"}
-                        </p>
-                        <p>
-                          <span className="font-semibold">Membership:</span>{" "}
-                          {detail.user?.membership?.status || "none"}
-                        </p>
+                        <div className="grid md:grid-cols-2 gap-4">
+                          <div className="space-y-3 text-sm">
+                            {(() => {
+                              const parentName = [
+                                detail.user?.parent?.firstName,
+                                detail.user?.parent?.lastName,
+                              ]
+                                .filter(Boolean)
+                                .join(" ");
+                              const childName = [
+                                detail.user?.child?.firstName,
+                                detail.user?.child?.lastName,
+                              ]
+                                .filter(Boolean)
+                                .join(" ");
+                              const yearsFromDob = (dob) => {
+                                if (!dob) return null;
+                                const birth = new Date(dob);
+                                if (isNaN(birth)) return null;
+                                const today = new Date();
+                                let age = today.getFullYear() - birth.getFullYear();
+                                const m = today.getMonth() - birth.getMonth();
+                                if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
+                                return age;
+                              };
+                              const derivedAge =
+                                yearsFromDob(detail.user?.child?.dob) ??
+                                (Number(detail.user?.child?.age ?? detail.user?.age) || null);
+                              return (
+                                <>
+                                  <div>
+                                    <div className="text-gray-500 text-sm">Parent</div>
+                                    <div className="font-medium">
+                                    {editMode ? (
+                                      <div className="grid grid-cols-2 gap-2 text-sm">
+                                        <input className="border rounded p-1 w-full text-sm" placeholder="First name" value={form?.parent?.firstName || ""} onChange={(e)=>updateField("parent.firstName", e.target.value)} />
+                                        <input className="border rounded p-1 w-full text-sm" placeholder="Last name" value={form?.parent?.lastName || ""} onChange={(e)=>updateField("parent.lastName", e.target.value)} />
+                                      </div>
+                                    ) : (parentName || "-")}
+                                    </div>
+                                  </div>
+
+                                  <div>
+                                    <div className="text-gray-500 text-sm">Child | Age</div>
+                                    <div className="font-medium">
+                                      {editMode ? (
+                                      <div className="grid grid-cols-2 gap-2 text-sm">
+                                        <input className="border rounded p-1 w-full text-sm" placeholder="First name" value={form?.child?.firstName || ""} onChange={(e)=>updateField("child.firstName", e.target.value)} />
+                                        <input className="border rounded p-1 w-full text-sm" placeholder="Last name" value={form?.child?.lastName || ""} onChange={(e)=>updateField("child.lastName", e.target.value)} />
+                                        <input className="border rounded p-1 w-full col-span-2 text-sm" type="date" value={form?.child?.dob || ""} onChange={(e)=>updateField("child.dob", e.target.value)} />
+                                      </div>
+                                    ) : (
+                                        <>
+                                          {childName || "-"}
+                                          {derivedAge != null ? (
+                                            <span>{childName ? ` | ${derivedAge}` : ` ${derivedAge}`}</span>
+                                          ) : null}
+                                        </>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  <div>
+                                    <div className="text-gray-500 text-sm">Email</div>
+                                    <div className="font-medium">{detail.user?.email}</div>
+                                  </div>
+
+                                  <div>
+                                    <div className="text-gray-500 text-sm">Phone</div>
+                                    <div className="font-medium">
+                                    {editMode ? (
+                                      <input className="border rounded p-1 w-full text-sm" value={form?.phone || ""} onChange={(e)=>updateField("phone", e.target.value)} />
+                                    ) : (detail.user?.phone || "-")}
+                                    </div>
+                                  </div>
+
+                                  <div>
+                                    <div className="text-gray-500 text-sm">Role</div>
+                                    <div className="font-medium">{detail.user?.role || "customer"}</div>
+                                  </div>
+
+                                  <div>
+                                    <div className="text-gray-500 text-sm">Membership</div>
+                                    <div className="font-medium">{detail.user?.membership?.status || "none"}</div>
+                                  </div>
+                                </>
+                              );
+                            })()}
+                          </div>
+                          <div className="space-y-2 text-sm">
+                            <div>
+                              <div className="text-gray-500 text-sm">Address</div>
+                              {editMode ? (
+                                <div className="grid grid-cols-2 gap-2 text-sm">
+                                  <input className="border rounded p-1 col-span-1 w-full text-sm" placeholder="House number" value={form?.address?.houseNumber || ""} onChange={(e)=>updateField("address.houseNumber", e.target.value)} />
+                                  <input className="border rounded p-1 col-span-1 w-full text-sm" placeholder="Street" value={form?.address?.street || ""} onChange={(e)=>updateField("address.street", e.target.value)} />
+                                  <input className="border rounded p-1 col-span-1 w-full text-sm" placeholder="City" value={form?.address?.city || ""} onChange={(e)=>updateField("address.city", e.target.value)} />
+                                  <input className="border rounded p-1 col-span-1 w-full text-sm" placeholder="County" value={form?.address?.county || ""} onChange={(e)=>updateField("address.county", e.target.value)} />
+                                  <input className="border rounded p-1 col-span-2 w-full text-sm" placeholder="Postcode" value={form?.address?.postcode || ""} onChange={(e)=>updateField("address.postcode", e.target.value)} />
+                                </div>
+                              ) : (
+                                <div className="font-medium whitespace-pre-line text-sm">
+                                  {(() => {
+                                    const a = detail.user?.address || {};
+                                    const lines = [
+                                      [a?.houseNumber, a?.street].filter(Boolean).join(" "),
+                                      a?.city,
+                                      a?.county,
+                                      a?.postcode,
+                                    ]
+                                      .filter(Boolean)
+                                      .join("\n");
+                                    return lines || "-";
+                                  })()}
+                                </div>
+                              )}
+                            </div>
+                            <div>
+                              <div className="text-gray-500 text-sm">Emergency Contact</div>
+                              {editMode ? (
+                                <div className="grid grid-cols-3 gap-2 text-sm">
+                                  <input className="border rounded p-1 col-span-1 w-full text-sm" placeholder="Name" value={form?.emergencyContact?.name || ""} onChange={(e)=>updateField("emergencyContact.name", e.target.value)} />
+                                  <input className="border rounded p-1 col-span-1 w-full text-sm" placeholder="Phone" value={form?.emergencyContact?.phone || ""} onChange={(e)=>updateField("emergencyContact.phone", e.target.value)} />
+                                  <input className="border rounded p-1 col-span-1 w-full text-sm" placeholder="Relation" value={form?.emergencyContact?.relation || ""} onChange={(e)=>updateField("emergencyContact.relation", e.target.value)} />
+                                </div>
+                              ) : (
+                                <div className="font-medium text-sm">
+                                  {[
+                                    detail.user?.emergencyContact?.name,
+                                    detail.user?.emergencyContact?.phone,
+                                    detail.user?.emergencyContact?.relation,
+                                  ]
+                                    .filter(Boolean)
+                                    .join(" | ") || "-"}
+                                </div>
+                              )}
+                            </div>
+                            <div>
+                              <div className="text-gray-500 text-sm">Medical Details</div>
+                              {editMode ? (
+                                <textarea className="border rounded p-2 w-full text-sm" rows={3} value={form?.medical || ""} onChange={(e)=>updateField("medical", e.target.value)} />
+                              ) : (
+                                <div className="font-medium whitespace-pre-wrap text-sm">{detail.user?.medical || "-"}</div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
                       </div>
 
                       <div className="bg-gray-50 border rounded p-4">
-                        <h3 className="font-semibold mb-2">Bookings</h3>
-                        {Array.isArray(detail.bookings) &&
-                        detail.bookings.length > 0 ? (
-                          <ul className="list-disc list-inside text-sm">
-                            {detail.bookings.map((b, i) => (
-                              <li key={i}>{JSON.stringify(b)}</li>
-                            ))}
-                          </ul>
+                        <h3 className="font-semibold mb-2">Enrolled Classes</h3>
+                        {Array.isArray(detail.enrollments) && detail.enrollments.length > 0 ? (
+                          <div className="rounded border border-gray-200 overflow-hidden">
+                            <table className="min-w-full text-sm">
+                              <thead className="bg-gray-100">
+                                <tr>
+                                  <th className="px-3 py-2 border text-left">Class</th>
+                                  <th className="px-3 py-2 border text-left">Schedule</th>
+                                  <th className="px-3 py-2 border text-left">Teacher</th>
+                                  <th className="px-3 py-2 border text-left">Status</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {detail.enrollments.map((e) => (
+                                  <tr key={e._id} className="hover:bg-gray-50">
+                                    <td className="px-3 py-2 border">{e.class?.name || ""}</td>
+                                    <td className="px-3 py-2 border">{[e.class?.day, e.class?.time].filter(Boolean).join(" | ")}</td>
+                                    <td className="px-3 py-2 border">{e.class?.instructor || "TBA"}</td>
+                                    <td className="px-3 py-2 border capitalize">{e.status || "active"}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
                         ) : (
-                          <p className="text-sm text-gray-600">
-                            No bookings yet.
-                          </p>
+                          <p className="text-sm text-gray-600">No enrollments yet.</p>
                         )}
                       </div>
 
                       <div className="bg-gray-50 border rounded p-4">
                         <h3 className="font-semibold mb-2">Payments</h3>
-                        {Array.isArray(detail.payments) &&
-                        detail.payments.length > 0 ? (
-                          <ul className="list-disc list-inside text-sm">
-                            {detail.payments.map((p, i) => (
-                              <li key={i}>{JSON.stringify(p)}</li>
-                            ))}
+                        {Array.isArray(detail.payments) && detail.payments.length > 0 ? (
+                          <ul className="space-y-1 text-sm">
+                            {detail.payments.map((p, i) => {
+                              const currency = String(p?.currency || "GBP").toUpperCase();
+                              const amount = Number(p?.amount) || 0;
+                              const amountText = new Intl.NumberFormat("en-GB", {
+                                style: "currency",
+                                currency,
+                                minimumFractionDigits: 0,
+                              }).format(amount);
+                              const dateText = new Date(p?.createdAt || p?.timestamp || Date.now()).toLocaleString();
+                              const status = p?.payment_status || p?.status || "paid";
+                              return (
+                                <li key={i} className="flex items-center justify-between gap-3">
+                                  <span className="text-gray-600">{dateText}</span>
+                                  <span className="font-medium">{amountText}</span>
+                                  <span className="px-2 py-0.5 rounded bg-green-100 text-green-700 border border-green-200 capitalize">
+                                    {status}
+                                  </span>
+                                </li>
+                              );
+                            })}
                           </ul>
                         ) : (
-                          <p className="text-sm text-gray-600">
-                            No payments recorded.
-                          </p>
+                          <p className="text-sm text-gray-600">No payments recorded.</p>
                         )}
                       </div>
                     </div>

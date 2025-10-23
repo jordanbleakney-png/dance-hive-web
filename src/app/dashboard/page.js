@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useSession } from "next-auth/react";
 import { useEffect, useState } from "react";
@@ -29,7 +29,8 @@ export default function DashboardPage() {
           const data = await r.json();
           setOverview(data);
           // Show welcome modal on every login until they upgrade
-          const isConvertedCustomer = roleFromStatus === "customer" && (!data?.membership || data?.membership?.status === "none");
+          const isConvertedCustomer =
+            roleFromStatus === "customer" && (!data?.membership || data?.membership?.status === "none");
           if (isConvertedCustomer) {
             setShowWelcome(true);
           }
@@ -50,10 +51,20 @@ export default function DashboardPage() {
     );
   }
 
-  const childName = overview ? [overview.child?.firstName, overview.child?.lastName].filter(Boolean).join(" | ") : "";
-  const parentName = overview ? [overview.parent?.firstName, overview.parent?.lastName].filter(Boolean).join(" | ") : "";
+  const childName = overview
+    ? [overview.child?.firstName, overview.child?.lastName].filter(Boolean).join(" | ")
+    : "";
+  const parentName = overview
+    ? [overview.parent?.firstName, overview.parent?.lastName].filter(Boolean).join(" | ")
+    : "";
   const addressLine = overview
-    ? [overview.address?.houseNumber, overview.address?.street, overview.address?.city, overview.address?.county, overview.address?.postcode]
+    ? [
+        overview.address?.houseNumber,
+        overview.address?.street,
+        overview.address?.city,
+        overview.address?.county,
+        overview.address?.postcode,
+      ]
         .filter(Boolean)
         .join(", ")
     : "";
@@ -78,28 +89,41 @@ export default function DashboardPage() {
         {showWelcome && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
             <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full mx-4 p-6 text-center">
-              <h2 className="font-bold text-xl mb-3">You made it, {session?.user?.name || "there"}! 🎉🐝</h2>
+              <h2 className="font-bold text-xl mb-3">You made it, {session?.user?.name || "there"}!</h2>
               <p className="text-gray-700 mb-4">
-                Your trial class was just the beginning — we’d love for you to stay buzzing with us!<br />
-                Get ready to bee-come an official member of the Hive! ✨
+                Your trial class was just the beginning — we'd love for you to stay with us!<br />
+                Get ready to become an official member of the Hive.
               </p>
               <div className="flex gap-3 justify-center">
-                <button onClick={handleUpgrade} disabled={upgrading} className="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-5 py-2 rounded disabled:opacity-60">
+                <button
+                  onClick={handleUpgrade}
+                  disabled={upgrading}
+                  className="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-5 py-2 rounded disabled:opacity-60"
+                >
                   {upgrading ? "Starting checkout..." : "Upgrade to Member"}
                 </button>
-                <button onClick={() => setShowWelcome(false)} className="border border-gray-300 text-gray-700 px-5 py-2 rounded hover:bg-gray-50">Not now</button>
+                <button
+                  onClick={() => setShowWelcome(false)}
+                  className="border border-gray-300 text-gray-700 px-5 py-2 rounded hover:bg-gray-50"
+                >
+                  Not now
+                </button>
               </div>
             </div>
           </div>
         )}
         <h1 className="text-2xl font-bold mb-3">Welcome back, {session?.user?.name || "User"}</h1>
-        <p className="text-gray-600 mb-6">Your current role: <span className="font-medium">{role}</span></p>
+        <p className="text-gray-600 mb-6">
+          Your current role: <span className="font-medium">{role}</span>
+        </p>
 
         {overview && (
           <div className="max-w-3xl mx-auto bg-white rounded-xl shadow p-6 text-left mb-6">
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-lg font-semibold">Child Details</h2>
-              <a href="/dashboard/settings" className="text-sm text-blue-600 hover:underline">Edit</a>
+              <a href="/dashboard/settings" className="text-sm text-blue-600 hover:underline">
+                Edit
+              </a>
             </div>
             <div className="grid md:grid-cols-3 gap-4 text-sm">
               <div>
@@ -120,11 +144,23 @@ export default function DashboardPage() {
               )}
               <div className="md:col-span-3">
                 <div className="text-gray-500">Medical information</div>
-                <div className="font-medium whitespace-pre-wrap">{overview.medical || "No medical information on file. Please update in Settings."}</div>
+                <div className="font-medium whitespace-pre-wrap">
+                  {overview.medical || "No medical information on file. Please update in Settings."}
+                </div>
               </div>
               <div className="md:col-span-3">
                 <div className="text-gray-500">Emergency contact details</div>
-                <div className="font-medium">{[overview.emergencyContact?.name, overview.emergencyContact?.phone, overview.emergencyContact?.relation].filter(Boolean).join(" | ") || "Not provided"}</div>
+                <div className="font-medium">
+                  {
+                    [
+                      overview.emergencyContact?.name,
+                      overview.emergencyContact?.phone,
+                      overview.emergencyContact?.relation,
+                    ]
+                      .filter(Boolean)
+                      .join(" | ") || "Not provided"
+                  }
+                </div>
               </div>
             </div>
           </div>
@@ -147,7 +183,9 @@ export default function DashboardPage() {
                   {overview.enrollments.map((e) => (
                     <tr key={e._id} className="hover:bg-gray-50">
                       <td className="px-4 py-2 border">{e.class?.name || ""}</td>
-                      <td className="px-4 py-2 border">{[e.class?.day, e.class?.time].filter(Boolean).join(" | ")}</td>
+                      <td className="px-4 py-2 border">
+                        {[e.class?.day, e.class?.time].filter(Boolean).join(" | ")}
+                      </td>
                       <td className="px-4 py-2 border">{e.class?.instructor || "TBA"}</td>
                       <td className="px-4 py-2 border">{e.status || "active"}</td>
                     </tr>
@@ -199,9 +237,19 @@ export default function DashboardPage() {
                 <tbody>
                   {overview.payments.map((p, i) => (
                     <tr key={i} className="hover:bg-gray-50">
-                      <td className="px-4 py-2 border">{new Date(p.createdAt || p.timestamp || Date.now()).toLocaleString()}</td>
-                      <td className="px-4 py-2 border">{new Intl.NumberFormat('en-GB', { style: 'currency', currency: String(p.currency || 'GBP').toUpperCase(), minimumFractionDigits: 0 }).format(Number(p.amount) || 0)}</td>
-                      <td className="px-4 py-2 border">{p.payment_status || 'paid'}</td>
+                      <td className="px-4 py-2 border">
+                        {new Date(p.createdAt || p.timestamp || Date.now()).toLocaleString()}
+                      </td>
+                      <td className="px-4 py-2 border">
+                        {
+                          new Intl.NumberFormat("en-GB", {
+                            style: "currency",
+                            currency: String(p.currency || "GBP").toUpperCase(),
+                            minimumFractionDigits: 0,
+                          }).format(Number(p.amount) || 0)
+                        }
+                      </td>
+                      <td className="px-4 py-2 border">{p.payment_status || "paid"}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -213,8 +261,3 @@ export default function DashboardPage() {
     </DashboardLayout>
   );
 }
-
-
-
-
-

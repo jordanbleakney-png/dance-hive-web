@@ -13,15 +13,15 @@ export default function DashboardLayout({ children, allowedRoles = [] }) {
   useEffect(() => {
     if (status === "loading") return;
 
-    // 🚫 Not logged in
+    // Not logged in
     if (status === "unauthenticated" || !session?.user?.email) {
       router.replace("/login");
       return;
     }
 
-    // 🚫 Role not permitted for this dashboard
+    // Role not permitted for this dashboard
     if (allowedRoles.length > 0 && !allowedRoles.includes(session.user.role)) {
-      console.warn(`🚫 Access denied for role: ${session.user.role}`);
+      console.warn(`[auth] Access denied for role: ${session.user.role}`);
       router.replace("/dashboard"); // default fallback
       return;
     }
@@ -30,9 +30,7 @@ export default function DashboardLayout({ children, allowedRoles = [] }) {
   }, [session, status, router, allowedRoles]);
 
   if (status === "loading") {
-    return (
-      <div className="p-10 text-center text-gray-600">Loading session...</div>
-    );
+    return <div className="p-10 text-center text-gray-600">Loading session...</div>;
   }
 
   if (!isAuthorized) {
@@ -41,25 +39,22 @@ export default function DashboardLayout({ children, allowedRoles = [] }) {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* 🧭 Navbar */}
+      {/* Navbar */}
       <nav className="bg-white shadow-sm px-6 py-3 flex justify-between items-center">
         <div className="flex items-center gap-3">
           <span className="text-xl font-semibold text-blue-600">DanceHive</span>
-          <span className="text-gray-500 text-sm">
-            {session?.user?.role?.toUpperCase()}
-          </span>
+          <span className="text-gray-500 text-sm">{session?.user?.role?.toUpperCase()}</span>
         </div>
 
         <div className="flex items-center gap-4">
-          <span className="text-gray-700 text-sm">
-            {session?.user?.name || "User"}
-          </span>
+          <span className="text-gray-700 text-sm">{session?.user?.name || "User"}</span>
           <LogoutButton />
         </div>
       </nav>
 
-      {/* 🧩 Main Content */}
+      {/* Main Content */}
       <main className="p-10">{children}</main>
     </div>
   );
 }
+

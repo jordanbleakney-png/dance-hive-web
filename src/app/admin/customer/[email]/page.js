@@ -13,104 +13,71 @@ export default function CustomerPage() {
 
   useEffect(() => {
     async function fetchData() {
-      const res = await fetch(`/api/customers/${email}`);
-      if (res.ok) {
-        const data = await res.json();
-        setData(data);
+      try {
+        const res = await fetch(`/api/customers/${email}`);
+        if (res.ok) {
+          const d = await res.json();
+          setData(d);
+        }
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     }
     fetchData();
   }, [email]);
 
-  if (loading)
-    return <p className="p-10 text-center">Loading customer details...</p>;
-  if (!data || !data.user)
-    return <p className="p-10 text-center text-red-500">No data found.</p>;
+  if (loading) return <p className="p-10 text-center">Loading customer details...</p>;
+  if (!data || !data.user) return <p className="p-10 text-center text-red-500">No data found.</p>;
 
-  const { user, bookings, payments } = data;
+  const { user, enrollments = [], payments = [] } = data;
 
   return (
     <div className="min-h-screen bg-gray-50 p-8">
       {/* Back Button */}
-      <button
-        onClick={() => router.back()}
-        className="mb-4 text-blue-600 underline hover:text-blue-800"
-      >
-        ← Back to Admin Dashboard
+      <button onClick={() => router.back()} className="mb-4 text-blue-600 underline hover:text-blue-800">
+        Back to Admin Dashboard
       </button>
 
       {/* Customer Info */}
       <div className="bg-white p-6 rounded-xl shadow-md mb-8">
-        <h1 className="text-2xl font-bold mb-2">{user.name}</h1>
+        <h1 className="text-2xl font-bold mb-2">{user.name || `${user?.parent?.firstName || ""} ${user?.parent?.lastName || ""}`.trim()}</h1>
         <p>
           <strong>Email:</strong> {user.email}
         </p>
         <p className="mb-2">
           <strong>Role:</strong> {user.role}
         </p>
-        <p>
-          <strong>Account Created:</strong>{" "}
-          {new Date(user.createdAt).toLocaleDateString()}
-        </p>
-
-        {/* Admin Controls — Change Role */}
-        <div className="mt-4">
-          <h3 className="text-lg font-semibold mb-2">Change Role</h3>
-          <div className="flex gap-2">
-            {["trial", "member", "admin"].map((role) => (
-              <button
-                key={role}
-                onClick={async () => {
-                  const res = await fetch("/api/customers/update-role", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ email: user.email, newRole: role }),
-                  });
-
-                  if (res.ok) {
-                    alert(`User role updated to ${role}!`);
-                    window.location.reload();
-                  } else {
-                    alert("Error updating role.");
-                  }
-                }}
-                className={`px-4 py-2 rounded-md text-white transition ${
-                  user.role === role
-                    ? "bg-gray-400 cursor-not-allowed"
-                    : "bg-blue-500 hover:bg-blue-600"
-                }`}
-                disabled={user.role === role}
-              >
-                {role.charAt(0).toUpperCase() + role.slice(1)}
-              </button>
-            ))}
-          </div>
-        </div>
+        {user.createdAt && (
+          <p>
+            <strong>Account Created:</strong> {new Date(user.createdAt).toLocaleDateString()}
+          </p>
+        )}
       </div>
 
-      {/* Bookings */}
+      {/* Enrollments */}
       <div className="bg-white p-6 rounded-xl shadow-md mb-8">
-        <h2 className="text-xl font-semibold mb-4">Bookings</h2>
-        {bookings.length === 0 ? (
-          <p>No bookings yet.</p>
+        <h2 className="text-xl font-semibold mb-4">Enrolled Classes</h2>
+        {enrollments.length === 0 ? (
+          <p>No enrollments yet.</p>
         ) : (
           <table className="min-w-full border border-gray-200">
             <thead className="bg-gray-100">
               <tr>
-                <th className="px-4 py-2 border">Dance Style</th>
-                <th className="px-4 py-2 border">Status</th>
-                <th className="px-4 py-2 border">Date</th>
+                <th className="px-4 py-2 border text-left">Class</th>
+                <th className="px-4 py-2 border text-left">Schedule</th>
+                <th className="px-4 py-2 border text-left">Teacher</th>
+                <th className="px-4 py-2 border text-left">Status</th>
+                <th className="px-4 py-2 border text-left">Enrolled</th>
               </tr>
             </thead>
             <tbody>
-              {bookings.map((b) => (
-                <tr key={b._id} className="hover:bg-gray-50">
-                  <td className="px-4 py-2 border">{b.danceStyle}</td>
-                  <td className="px-4 py-2 border">{b.status}</td>
-                  <td className="px-4 py-2 border text-sm">
-                    {new Date(b.createdAt).toLocaleString()}
-                  </td>
+              {enrollments.map((e) => (
+                <tr key={e._id} className="hover:bg-gray-50">
+                  <td className="px-4 py-2 border">{e.class?.name || ""}</td>
+                  <td className="px-4 py-2 border">{[e.class?.day, e.class?.time].filter(Boolean).join(" | ")}</td>
+                  <td className="px-4 py-2 border">{e.class?.instructor || "TBA"}</td>
+                  <td className="px-4 py-2 border capitalize">{e.status || "active"}</td>
+                  <td className="px-4 py-2 border text-sm">{e.createdAt ? new Date(e.createdAt).toLocaleString() : ""}</td>
                 </tr>
               ))}
             </tbody>
@@ -127,31 +94,26 @@ export default function CustomerPage() {
           <table className="min-w-full border border-gray-200">
             <thead className="bg-gray-100">
               <tr>
-                <th className="px-4 py-2 border">Amount</th>
-                <th className="px-4 py-2 border">Currency</th>
-                <th className="px-4 py-2 border">Status</th>
-                <th className="px-4 py-2 border">Date</th>
+                <th className="px-4 py-2 border text-left">Amount</th>
+                <th className="px-4 py-2 border text-left">Status</th>
+                <th className="px-4 py-2 border text-left">Date</th>
               </tr>
             </thead>
             <tbody>
-              {payments.map((p) => (
-                <tr key={p._id} className="hover:bg-gray-50">
-                  <td className="px-4 py-2 border">£{p.amount}</td>
-                  <td className="px-4 py-2 border">{p.currency}</td>
-                  <td className="px-4 py-2 border">
-                    {p.payment_status === "paid" ? (
-                      <span className="text-green-600 font-semibold">Paid</span>
-                    ) : (
-                      <span className="text-red-600 font-semibold">
-                        {p.payment_status}
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-4 py-2 border text-sm">
-                    {new Date(p.createdAt).toLocaleString()}
-                  </td>
-                </tr>
-              ))}
+              {payments.map((p) => {
+                const currency = String(p?.currency || "GBP").toUpperCase();
+                const amount = Number(p?.amount) || 0;
+                const amountText = new Intl.NumberFormat("en-GB", { style: "currency", currency, minimumFractionDigits: 0 }).format(amount);
+                const status = p?.payment_status || p?.status || "paid";
+                const dateText = new Date(p?.createdAt || p?.timestamp || Date.now()).toLocaleString();
+                return (
+                  <tr key={p._id} className="hover:bg-gray-50">
+                    <td className="px-4 py-2 border">{amountText}</td>
+                    <td className="px-4 py-2 border capitalize">{status}</td>
+                    <td className="px-4 py-2 border text-sm">{dateText}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}

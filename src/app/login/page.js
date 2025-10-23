@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState } from "react";
 import { signIn } from "next-auth/react";
@@ -15,12 +15,9 @@ export default function LoginPage() {
     setError("");
 
     try {
-      const base =
-        typeof window !== "undefined"
-          ? window.location.origin
-          : "http://localhost:3000";
+      const base = typeof window !== "undefined" ? window.location.origin : "http://localhost:3000";
 
-      console.log("ðŸ” Attempting login for:", email);
+      console.log("[login] Attempting login for:", email);
 
       const res = await signIn("credentials", {
         redirect: false,
@@ -28,22 +25,22 @@ export default function LoginPage() {
         password,
       });
 
-      console.log("ðŸ” Login response:", res);
+      console.log("[login] Login response:", res);
 
       if (res?.error) {
         setError("Invalid email or password");
         return;
       }
 
-      // âœ… Fetch session after successful sign-in to get the user role
+      // Fetch session after successful sign-in to get the user role
       const sessionRes = await fetch("/api/auth/session");
       const sessionData = await sessionRes.json();
 
-      console.log("âœ… Session after login:", sessionData);
+      console.log("[login] Session after login:", sessionData);
 
       const role = sessionData?.user?.role;
 
-      // âœ… Smart redirect based on role
+      // Smart redirect based on role
       if (role === "admin") {
         router.push("/admin");
       } else if (role === "teacher") {
@@ -52,17 +49,14 @@ export default function LoginPage() {
         router.push("/dashboard");
       }
     } catch (err) {
-      console.error("ðŸ’¥ Login error:", err);
+      console.error("[login] Login error:", err);
       setError("Unexpected login error. Check console.");
     }
   };
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50">
-      <form
-        onSubmit={handleSubmit}
-        className="bg-white p-8 rounded-2xl shadow-md w-96"
-      >
+      <form onSubmit={handleSubmit} className="bg-white p-8 rounded-2xl shadow-md w-96">
         <h1 className="text-2xl font-bold mb-6 text-center">Login</h1>
 
         <input
@@ -85,10 +79,7 @@ export default function LoginPage() {
 
         {error && <p className="text-red-600 text-sm mb-4">{error}</p>}
 
-        <button
-          type="submit"
-          className="w-full bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700 transition"
-        >
+        <button type="submit" className="w-full bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700 transition">
           Log In
         </button>
       </form>

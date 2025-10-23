@@ -1,4 +1,4 @@
-﻿import Stripe from "stripe";
+import Stripe from "stripe";
 
 /**
  * Extracts a normalized (lowercased) email address from any Stripe event.
@@ -13,18 +13,14 @@ export function getEmailFromStripe(event: Stripe.Event): string | null {
       case "checkout.session.async_payment_succeeded":
       case "checkout.session.async_payment_failed": {
         const session = event.data.object as Stripe.Checkout.Session;
-        email =
-          session.customer_details?.email ||
-          (session.metadata?.email as string | undefined);
+        email = session.customer_details?.email || (session.metadata?.email as string | undefined);
         break;
       }
 
       case "invoice.payment_succeeded":
       case "invoice.payment_failed": {
         const invoice = event.data.object as Stripe.Invoice;
-        email =
-          invoice.customer_email ||
-          (invoice.metadata?.email as string | undefined);
+        email = invoice.customer_email || (invoice.metadata?.email as string | undefined);
         break;
       }
 
@@ -39,7 +35,7 @@ export function getEmailFromStripe(event: Stripe.Event): string | null {
       default: {
         const dataObj = event.data.object;
 
-        // ðŸ§  Helper type guard
+        // Helper type guard
         const isPlainObject = (obj: unknown): obj is Record<string, unknown> =>
           obj !== null && typeof obj === "object" && !Array.isArray(obj);
 
@@ -48,10 +44,8 @@ export function getEmailFromStripe(event: Stripe.Event): string | null {
 
           const maybeEmail =
             (data["customer_email"] as string | undefined) ||
-            (isPlainObject(data["customer_details"]) &&
-              (data["customer_details"] as { email?: string }).email) ||
-            (isPlainObject(data["metadata"]) &&
-              (data["metadata"] as { email?: string }).email);
+            (isPlainObject(data["customer_details"]) && (data["customer_details"] as { email?: string }).email) ||
+            (isPlainObject(data["metadata"]) && (data["metadata"] as { email?: string }).email);
 
           if (typeof maybeEmail === "string") {
             email = maybeEmail;
@@ -65,12 +59,10 @@ export function getEmailFromStripe(event: Stripe.Event): string | null {
       return email.toLowerCase().trim();
     }
 
-    console.warn(
-      `âš ï¸ [getEmailFromStripe] No email found for event ${event.type}`
-    );
+    console.warn(`[getEmailFromStripe] No email found for event ${event.type}`);
     return null;
   } catch (err) {
-    console.error("ðŸ’¥ [getEmailFromStripe] Error extracting email:", err);
+    console.error("[getEmailFromStripe] Error extracting email:", err);
     return null;
   }
 }

@@ -16,13 +16,13 @@ export default function AuthGuard({ allowedRoles = [], children }) {
     if (status === "loading") return; // Wait for session to load
 
     if (status === "unauthenticated" || !session?.user) {
-      console.warn("🚫 Not authenticated, redirecting to /login");
+      console.warn("[auth] Not authenticated, redirecting to /login");
       router.replace("/login");
       return;
     }
 
     if (allowedRoles.length > 0 && !allowedRoles.includes(session.user.role)) {
-      console.warn("🚫 Unauthorized role, redirecting to /dashboard");
+      console.warn("[auth] Unauthorized role, redirecting to /dashboard");
       router.replace("/dashboard");
     }
   }, [session, status, router, allowedRoles]);
@@ -33,3 +33,4 @@ export default function AuthGuard({ allowedRoles = [], children }) {
 
   return <>{children}</>;
 }
+

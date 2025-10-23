@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getDb } from "@/lib/dbConnect"; // ✅ Unified DB helper
+import { getDb } from "@/lib/dbConnect"; // Unified DB helper
 
 export async function GET(req: Request) {
   try {
@@ -10,7 +10,7 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "Missing email" }, { status: 400 });
     }
 
-    // ✅ Use shared DB connection
+    // Use shared DB connection
     const db = await getDb();
 
     const user = await db.collection("users").findOne(
@@ -26,7 +26,7 @@ export async function GET(req: Request) {
       }
     );
 
-    // ✅ Return default guest response if user not found
+    // Return default guest response if user not found
     if (!user) {
       return NextResponse.json({
         email,
@@ -35,13 +35,14 @@ export async function GET(req: Request) {
       });
     }
 
-    // ✅ Return found user data
+    // Return found user data
     return NextResponse.json(user);
   } catch (error) {
-    console.error("⚠️ [status] Error fetching user status:", error);
+    console.error("[status] Error fetching user status:", error);
     return NextResponse.json(
       { error: "Internal Server Error" },
       { status: 500 }
     );
   }
 }
+

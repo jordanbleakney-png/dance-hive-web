@@ -1,7 +1,7 @@
-﻿import { MongoClient } from "mongodb";
+import { MongoClient } from "mongodb";
 
 if (!process.env.MONGODB_URI) {
-  throw new Error("âŒ MONGODB_URI is not defined in environment variables!");
+  throw new Error("MONGODB_URI is not defined in environment variables!");
 }
 
 const uri = process.env.MONGODB_URI;
@@ -12,6 +12,7 @@ let clientPromise: Promise<MongoClient>;
 
 declare global {
   // allow global var for hot reloads in dev
+  // eslint-disable-next-line no-var
   var _mongoClientPromise: Promise<MongoClient> | undefined;
 }
 
@@ -23,23 +24,23 @@ if (process.env.NODE_ENV === "development") {
   } else {
     console.log("[db] Reusing existing MongoDB client (hot reload)");
   }
-  clientPromise = global._mongoClientPromise;
+  clientPromise = global._mongoClientPromise as Promise<MongoClient>;
 } else {
   console.log("[db] Creating MongoDB client (production)...");
   client = new MongoClient(uri!, options);
   clientPromise = client.connect();
 }
 
-// âœ… Default export (for direct use)
+// Default export (for direct use)
 export default clientPromise;
 
-// âœ… Named helper (for convenience)
+// Named helper (for convenience)
 export async function getDb() {
   const client = await clientPromise;
   return client.db(process.env.MONGODB_DB || "danceHive");
 }
 
-// ðŸ§  Auto-run index verification on startup
+// Auto-run index verification on startup
 let hasEnsuredIndexes = false;
 
 async function runEnsureIndexes() {
@@ -57,5 +58,3 @@ async function runEnsureIndexes() {
 }
 
 runEnsureIndexes();
-
-
