@@ -56,7 +56,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
         role: "customer",
         phone,
         parent: { firstName: parentFirstName, lastName: parentLastName },
-        child: { firstName: childFirstName, lastName: childLastName },
+        // Do not store child embedded in user; children live in 'children'
         age: Number((trial as any)?.childAge) || null,
         membership: { status: "none", classId: (trial as any)?.classId || null },
         password: hashedPassword,
@@ -73,7 +73,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
             role: (user as any)?.role || "customer",
             phone: (user as any)?.phone || phone,
             parent: (user as any)?.parent || { firstName: parentFirstName, lastName: parentLastName },
-            child: (user as any)?.child || { firstName: childFirstName, lastName: childLastName },
+            // No embedded child on user
             "membership.status": (user as any)?.membership?.status || "none",
             "membership.classId": (trial as any)?.classId || (user as any)?.membership?.classId || null,
             updatedAt: new Date(),
@@ -81,6 +81,34 @@ export async function POST(req: Request, { params }: { params: { id: string } })
         }
       );
     }
+
+    // Ensure a child document exists for this user
+    const existingChild = await db.collection("children").findOne({
+      userId,
+      firstName: childFirstName,
+      lastName: childLastName,
+    });
+    let childId: ObjectId | null = null;
+    if (!existingChild) {
+      const insChild = await db.collection("children").insertOne({
+        userId,
+        firstName: childFirstName,
+        lastName: childLastName,
+        dob: null,
+        medical: "",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+      childId = insChild.insertedId as ObjectId;
+    } else {
+      childId = existingChild._id as ObjectId;
+    }
+
+    // Optionally set primaryChildId for convenience
+    await db.collection("users").updateOne(
+      { _id: userId, primaryChildId: { $exists: false } },
+      { $set: { primaryChildId: childId } }
+    );
 
     // Update trial status
     await db.collection("trialBookings").updateOne(

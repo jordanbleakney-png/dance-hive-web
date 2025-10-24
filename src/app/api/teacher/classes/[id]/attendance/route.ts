@@ -4,7 +4,7 @@ import { getDb } from "@/lib/dbConnect";
 import { ObjectId } from "mongodb";
 
 // POST /api/teacher/classes/[id]/attendance
-// Body: { userId: string, date?: string }
+// Body: { userId: string, childId?: string, date?: string }
 export async function POST(req: Request, { params }: { params: { id: string } }) {
   try {
     const session = await auth();
@@ -12,16 +12,18 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { userId, date } = await req.json();
+    const { userId, childId, date } = await req.json();
     if (!userId) {
       return NextResponse.json({ error: "Missing userId" }, { status: 400 });
     }
 
     let classId: ObjectId;
     let uId: ObjectId;
+    let cId: ObjectId | null = null;
     try {
       classId = new ObjectId(params.id);
       uId = new ObjectId(String(userId));
+      if (childId) cId = new ObjectId(String(childId));
     } catch {
       return NextResponse.json({ error: "Invalid ids" }, { status: 400 });
     }
@@ -36,7 +38,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
 
     const db = await getDb();
     await db.collection("enrollments").updateOne(
-      { userId: uId, classId },
+      { userId: uId, classId, ...(cId ? { childId: cId } : {}) } as any,
       { $addToSet: { attendedDates: ymd } }
     );
 
@@ -48,7 +50,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
 }
 
 // DELETE /api/teacher/classes/[id]/attendance
-// Body: { userId: string, date?: string }
+// Body: { userId: string, childId?: string, date?: string }
 export async function DELETE(req: Request, { params }: { params: { id: string } }) {
   try {
     const session = await auth();
@@ -56,16 +58,18 @@ export async function DELETE(req: Request, { params }: { params: { id: string } 
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { userId, date } = await req.json();
+    const { userId, childId, date } = await req.json();
     if (!userId) {
       return NextResponse.json({ error: "Missing userId" }, { status: 400 });
     }
 
     let classId: ObjectId;
     let uId: ObjectId;
+    let cId: ObjectId | null = null;
     try {
       classId = new ObjectId(params.id);
       uId = new ObjectId(String(userId));
+      if (childId) cId = new ObjectId(String(childId));
     } catch {
       return NextResponse.json({ error: "Invalid ids" }, { status: 400 });
     }
@@ -80,7 +84,7 @@ export async function DELETE(req: Request, { params }: { params: { id: string } 
 
     const db = await getDb();
     await db.collection("enrollments").updateOne(
-      { userId: uId, classId },
+      { userId: uId, classId, ...(cId ? { childId: cId } : {}) } as any,
       { $pull: { attendedDates: ymd } }
     );
 

@@ -77,14 +77,7 @@ export async function PATCH(req, context) {
       set["parent.lastName"] = body.parent.lastName ?? undefined;
     }
 
-    if (body.child && (body.child.firstName != null || body.child.lastName != null || body.child.dob != null)) {
-      set["child.firstName"] = body.child.firstName ?? undefined;
-      set["child.lastName"] = body.child.lastName ?? undefined;
-      if (body.child.dob != null) {
-        const d = new Date(body.child.dob);
-        if (!isNaN(d)) set["child.dob"] = d.toISOString();
-      }
-    }
+    // Intentionally ignore embedded child updates; children live in 'children' collection
 
     if (body.address) {
       const a = body.address;

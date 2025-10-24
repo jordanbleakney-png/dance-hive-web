@@ -86,12 +86,12 @@ export default function TeacherClassRegisterPage() {
     setSelectedDate(thisWeek);
   }, [cls]);
 
-  const markAttendance = async (userId: string) => {
+  const markAttendance = async (userId: string, childId?: string) => {
     try {
       const res = await fetch(`/api/teacher/classes/${id}/attendance`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, date: selectedDate }),
+        body: JSON.stringify({ userId, childId, date: selectedDate }),
       });
       if (!res.ok) throw new Error("Failed to mark attendance");
       await load();
@@ -100,12 +100,12 @@ export default function TeacherClassRegisterPage() {
     }
   };
 
-  const unmarkAttendance = async (userId: string) => {
+  const unmarkAttendance = async (userId: string, childId?: string) => {
     try {
       const res = await fetch(`/api/teacher/classes/${id}/attendance`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, date: selectedDate }),
+        body: JSON.stringify({ userId, childId, date: selectedDate }),
       });
       if (!res.ok) throw new Error("Failed to unmark attendance");
       await load();
@@ -211,7 +211,7 @@ export default function TeacherClassRegisterPage() {
                   <td className="px-4 py-2 border text-center">
                     {attendedSelected ? (
                       <button
-                        onClick={() => unmarkAttendance(e.userId)}
+                        onClick={() => unmarkAttendance(e.userId, e.childId)}
                         disabled={isFutureWeek}
                         className={`text-sm px-3 py-1 rounded-md ${isFutureWeek ? 'bg-gray-100 text-gray-400 border cursor-not-allowed' : 'bg-gray-200 hover:bg-gray-300 text-gray-800'}`}
                       >
@@ -219,7 +219,7 @@ export default function TeacherClassRegisterPage() {
                       </button>
                     ) : (
                       <button
-                        onClick={() => markAttendance(e.userId)}
+                        onClick={() => markAttendance(e.userId, e.childId)}
                         disabled={isFutureWeek}
                         className={`text-sm px-3 py-1 rounded-md ${isFutureWeek ? 'bg-green-100 text-green-300 border cursor-not-allowed' : 'bg-green-600 hover:bg-green-700 text-white'}`}
                       >

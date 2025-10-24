@@ -19,15 +19,17 @@ export async function POST(req) {
     const childObjectId = new ObjectId(String(childId));
     const classObjectId = new ObjectId(String(classId));
 
-    // If already enrolled, no-op
-    const existing = await db
-      .collection("enrollments")
-      .findOne({ userId: userObjectId, childId: childObjectId, classId: classObjectId });
+    // If already enrolled, no-op. Also heal legacy rows missing childId by attaching it.
+    const enrollmentsCol = db.collection("enrollments");
+    const existing = await enrollmentsCol.findOne({ userId: userObjectId, childId: childObjectId, classId: classObjectId });
     if (existing) {
-      return new Response(
-        JSON.stringify({ message: "Already enrolled" }),
-        { status: 200 }
-      );
+      return new Response(JSON.stringify({ message: "Already enrolled" }), { status: 200 });
+    }
+    // Legacy: if an enrollment exists for this user+class but has null/missing childId, update it in-place instead of inserting a duplicate
+    const legacy = await enrollmentsCol.findOne({ userId: userObjectId, classId: classObjectId, $or: [{ childId: { $exists: false } }, { childId: null }] });
+    if (legacy) {
+      await enrollmentsCol.updateOne({ _id: legacy._id }, { $set: { childId: childObjectId } });
+      return new Response(JSON.stringify({ message: "Enrollment updated" }), { status: 200 });
     }
 
     // Capacity check: only count active enrollments
@@ -57,7 +59,7 @@ export async function POST(req) {
       createdAt: new Date(),
     };
 
-    await db.collection("enrollments").updateOne(
+    await enrollmentsCol.updateOne(
       { userId: payload.userId, childId: payload.childId, classId: payload.classId },
       { $setOnInsert: payload },
       { upsert: true }

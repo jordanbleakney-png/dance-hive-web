@@ -30,7 +30,8 @@ export async function ensureIndexes() {
     // === CHILDREN COLLECTION ===
     const children = db.collection("children");
     await children.createIndex({ userId: 1 });
-    await children.createIndex({ lastName: 1, firstName: 1 });
+    // Compound index helps lookups per user and by name
+    await children.createIndex({ userId: 1, firstName: 1, lastName: 1 });
     console.log("[db] 'children' indexes verified");
 
     // === ENROLLMENTS COLLECTION ===

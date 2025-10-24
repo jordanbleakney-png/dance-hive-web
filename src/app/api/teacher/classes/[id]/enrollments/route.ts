@@ -28,6 +28,15 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
         { $unwind: "$user" },
         { $lookup: { from: "children", localField: "childId", foreignField: "_id", as: "child" } },
         { $unwind: { path: "$child", preserveNullAndEmptyArrays: true } },
+        // Backward compatibility: if child lookup fails, fall back to any embedded user.child fields
+        {
+          $addFields: {
+            _childFirst: { $ifNull: ["$child.firstName", "$user.child.firstName"] },
+            _childLast: { $ifNull: ["$child.lastName", "$user.child.lastName"] },
+            _childDob: { $ifNull: ["$child.dob", "$user.child.dob"] },
+            _childMedical: { $ifNull: ["$child.medical", "$user.medical"] },
+          }
+        },
         {
           $addFields: {
             "user.name": {
@@ -51,7 +60,7 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
             "user.phone": 1,
             "user.parent": 1,
             "user.emergencyContact": 1,
-            child: { firstName: "$child.firstName", lastName: "$child.lastName", dob: "$child.dob", medical: "$child.medical" }
+            child: { firstName: "$_childFirst", lastName: "$_childLast", dob: "$_childDob", medical: "$_childMedical" }
           }
         }
       ])

@@ -12,19 +12,35 @@ export async function GET() {
     const db = await getDb();
     const users = await db
       .collection("users")
-      .find({}, {
-        projection: {
-          email: 1,
-          role: 1,
-          membership: 1,
-          parent: 1,
-          child: 1,
-          phone: 1,
-          createdAt: 1,
-          updatedAt: 1,
+      .aggregate([
+        { $sort: { createdAt: -1 } },
+        { $project: { email: 1, role: 1, membership: 1, parent: 1, phone: 1, createdAt: 1, updatedAt: 1 } },
+        {
+          $lookup: {
+            from: "children",
+            localField: "_id",
+            foreignField: "userId",
+            as: "children",
+          },
         },
-      })
-      .sort({ createdAt: -1 })
+        {
+          $addFields: {
+            childrenCount: { $size: { $ifNull: ["$children", []] } },
+            firstChild: { $first: "$children" },
+          },
+        },
+        // For UI compatibility, also surface a 'child' field derived from firstChild
+        {
+          $addFields: {
+            child: {
+              firstName: "$firstChild.firstName",
+              lastName: "$firstChild.lastName",
+              dob: "$firstChild.dob",
+            },
+          },
+        },
+        { $project: { children: 0 } },
+      ])
       .toArray();
 
     return NextResponse.json({ users });
@@ -33,4 +49,3 @@ export async function GET() {
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
 }
-

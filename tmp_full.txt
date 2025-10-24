@@ -1,4 +1,4 @@
-ï»¿"use client";
+"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -190,7 +190,7 @@ export default function AdminUsersPage() {
     if (!detail?.user?._id || !addClassId || !childIdToUse) return;
     // Client-side guard: avoid duplicates
     if (
-      (uniqueEnrollments || []).some(
+      (detail?.enrollments || []).some(
         (e) =>
           String(e.childId) === String(childIdToUse) &&
           String(e.classId || e.class?._id) === String(addClassId)
@@ -295,20 +295,6 @@ export default function AdminUsersPage() {
         .some((v) => String(v).toLowerCase().includes(q))
     );
   }, [users, query]);
-
-  // Deduplicate enrollments by (childId,classId) in case of legacy or race-created duplicates
-  const uniqueEnrollments = useMemo(() => {
-    if (!detail?.enrollments) return [];
-    const seen = new Set();
-    const out = [];
-    for (const e of detail.enrollments) {
-      const k = `${String(e.childId)}::${String(e.classId || e?.class?._id || '')}`;
-      if (seen.has(k)) continue;
-      seen.add(k);
-      out.push(e);
-    }
-    return out;
-  }, [detail?.enrollments]);
 
   return (
     <DashboardLayout allowedRoles={["admin"]}>
@@ -441,8 +427,218 @@ export default function AdminUsersPage() {
 
                   {!detailLoading && detail && !detail.error && (
                     <div className="space-y-4">
+                      {/* Per-child sections when multiple children */}
+                      {(Array.isArray(detail.children)
+                        ? detail.children.length
+                        : 0) > 1 &&
+                        (detail.children || []).map((child) => {
+                          const childEnrollments = (
+                            detail.enrollments || []
+                          ).filter(
+                            (e) => String(e.childId) === String(child._id)
+                          );
+                          const selected =
+                            addClassByChild[String(child._id)] || "";
+                          const dup = childEnrollments.some(
+                            (e) =>
+                              String(e.classId || e.class?._id) ===
+                              String(selected)
+                          );
+                          const setSelected = (val) =>
+                            setAddClassByChild((prev) => ({
+                              ...prev,
+                              [String(child._id)]: val,
+                            }));
+                          const addForChild = async () => {
+                            setAddChildId(String(child._id));
+                            setAddClassId(String(selected));
+                            await addEnrollment();
+                            setAddClassByChild((prev) => ({
+                              ...prev,
+                              [String(child._id)]: "",
+                            }));
+                          };
+                          const childName = [child.firstName, child.lastName]
+                            .filter(Boolean)
+                            .join(" ");
+                          return (
+                            <div
+                              className="bg-gray-50 border rounded p-4"
+                              key={String(child._id)}
+                            >
+                              <div className="flex items-center justify-between mb-2">
+                                <h3 className="font-semibold">
+                                  {childName
+                                    ? `${childName} - Enrolled Classes`
+                                    : "Enrolled Classes"}
+                                </h3>
+                                <button
+                                  className="text-sm text-blue-600 hover:underline"
+                                  onClick={() => setEnrollEdit((v) => !v)}
+                                >
+                                  {enrollEdit ? "Done" : "Edit"}
+                                </button>
+                              </div>
+                              {childEnrollments.length > 0 ? (
+                                <div className="rounded border border-gray-200 overflow-hidden">
+                                  <table className="min-w-full text-sm">
+                                    <thead className="bg-gray-100">
+                                      <tr>
+                                        <th className="px-3 py-2 border text-left">
+                                          Class
+                                        </th>
+                                        <th className="px-3 py-2 border text-left">
+                                          Schedule
+                                        </th>
+                                        <th className="px-3 py-2 border text-left">
+                                          Teacher
+                                        </th>
+                                        <th className="px-3 py-2 border text-left">
+                                          Status
+                                        </th>
+                                        {enrollEdit && (
+                                          <th className="px-3 py-2 border text-left">
+                                            Actions
+                                          </th>
+                                        )}
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {childEnrollments.map((e) => (
+                                        <tr
+                                          key={e._id}
+                                          className="hover:bg-gray-50"
+                                        >
+                                          <td className="px-3 py-2 border">
+                                            {enrollEdit ? (
+                                              <select
+                                                className="border rounded px-2 py-1 text-sm"
+                                                defaultValue={String(
+                                                  e.class?._id || ""
+                                                )}
+                                                onChange={(ev) =>
+                                                  changeEnrollment(
+                                                    String(child._id),
+                                                    String(
+                                                      e.class?._id || e.classId
+                                                    ),
+                                                    ev.target.value
+                                                  )
+                                                }
+                                              >
+                                                <option value="">
+                                                  Select class
+                                                </option>
+                                                {classes.map((c) => {
+                                                  const enrolled = Number(
+                                                    c.studentCount || 0
+                                                  );
+                                                  const cap =
+                                                    c.capacity != null
+                                                      ? String(c.capacity)
+                                                      : "8";
+                                                  const label = `${c.name} - ${
+                                                    c.day || ""
+                                                  } ${
+                                                    c.time || ""
+                                                  } (${enrolled}/${cap})`;
+                                                  return (
+                                                    <option
+                                                      key={c._id}
+                                                      value={c._id}
+                                                    >
+                                                      {label}
+                                                    </option>
+                                                  );
+                                                })}
+                                              </select>
+                                            ) : (
+                                              e.class?.name || ""
+                                            )}
+                                          </td>
+                                          <td className="px-3 py-2 border">
+                                            {[e.class?.day, e.class?.time]
+                                              .filter(Boolean)
+                                              .join(" | ")}
+                                          </td>
+                                          <td className="px-3 py-2 border">
+                                            {e.class?.instructor || "TBA"}
+                                          </td>
+                                          <td className="px-3 py-2 border capitalize">
+                                            {e.status || "active"}
+                                          </td>
+                                          {enrollEdit && (
+                                            <td className="px-3 py-2 border">
+                                              <button
+                                                className="text-sm text-red-600 hover:underline"
+                                                onClick={() =>
+                                                  removeEnrollment(
+                                                    String(
+                                                      e.class?._id || e.classId
+                                                    ),
+                                                    String(child._id)
+                                                  )
+                                                }
+                                              >
+                                                Remove
+                                              </button>
+                                            </td>
+                                          )}
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              ) : (
+                                <p className="text-sm text-gray-600">
+                                  No enrollments yet.
+                                </p>
+                              )}
+                              {enrollEdit && (
+                                <div className="mt-3 flex items-center gap-2">
+                                  <select
+                                    className="border rounded px-2 py-1 text-sm"
+                                    value={selected}
+                                    onChange={(e) =>
+                                      setSelected(e.target.value)
+                                    }
+                                  >
+                                    <option value="">Add to class.</option>
+                                    {classes.map((c) => {
+                                      const enrolled = Number(
+                                        c.studentCount || 0
+                                      );
+                                      const cap =
+                                        c.capacity != null
+                                          ? String(c.capacity)
+                                          : "8";
+                                      const label = `${c.name} - ${
+                                        c.day || ""
+                                      } ${c.time || ""} (${enrolled}/${cap})`;
+                                      return (
+                                        <option key={c._id} value={c._id}>
+                                          {label}
+                                        </option>
+                                      );
+                                    })}
+                                  </select>
+                                  <button
+                                    className="text-sm bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded disabled:opacity-60"
+                                    disabled={!selected || dup}
+                                    onClick={addForChild}
+                                  >
+                                    {dup ? "Already enrolled" : "Add"}
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
 
-                      <div className="bg-gray-50 border rounded p-4">
+                      {(Array.isArray(detail.children)
+                        ? detail.children.length
+                        : 0) <= 1 && (
+                        <div className="bg-gray-50 border rounded p-4">
                           <div className="grid md:grid-cols-2 gap-4">
                             <div className="space-y-3 text-sm">
                               {(() => {
@@ -831,185 +1027,96 @@ export default function AdminUsersPage() {
                                 )}
                               </div>
 
-{/* NEW: Add Child entry */}
+                              {/* NEW: Add Child form */}
                               <div>
-                                <div className="text-gray-500 text-sm">Add Child</div>
-                                {editMode ? (
-                                  <>
-                                    <div className="grid grid-cols-2 gap-2 text-sm">
-                                      <input
-                                        className="border rounded p-1 w-full"
-                                        placeholder="First name"
-                                        value={newChild.firstName}
-                                        onChange={(e) =>
-                                          setNewChild((p) => ({ ...p, firstName: e.target.value }))
-                                        }
-                                      />
-                                      <input
-                                        className="border rounded p-1 w-full"
-                                        placeholder="Last name"
-                                        value={newChild.lastName}
-                                        onChange={(e) =>
-                                          setNewChild((p) => ({ ...p, lastName: e.target.value }))
-                                        }
-                                      />
-                                      <input
-                                        type="date"
-                                        className="border rounded p-1 w-full col-span-2"
-                                        value={newChild.dob}
-                                        onChange={(e) =>
-                                          setNewChild((p) => ({ ...p, dob: e.target.value }))
-                                        }
-                                      />
-                                      <textarea
-                                        className="border rounded p-1 w-full col-span-2"
-                                        rows={2}
-                                        placeholder="Medical notes (optional)"
-                                        value={newChild.medical}
-                                        onChange={(e) =>
-                                          setNewChild((p) => ({ ...p, medical: e.target.value }))
-                                        }
-                                      />
-                                    </div>
-                                    <div className="mt-2">
-                                      <button
-                                        className="text-sm bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded disabled:opacity-60"
-                                        disabled={!newChild.firstName || savingChild}
-                                        onClick={addChild}
-                                      >
-                                        {savingChild ? "Adding..." : "Add Child"}
-                                      </button>
-                                    </div>
-                                  </>
-                                ) : (
+                                <div className="text-gray-500 text-sm">
+                                  Add Child
+                                </div>
+                                <div className="grid grid-cols-2 gap-2 text-sm">
+                                  <input
+                                    className="border rounded p-1 w-full"
+                                    placeholder="First name"
+                                    value={newChild.firstName}
+                                    onChange={(e) =>
+                                      setNewChild((p) => ({
+                                        ...p,
+                                        firstName: e.target.value,
+                                      }))
+                                    }
+                                  />
+                                  <input
+                                    className="border rounded p-1 w-full"
+                                    placeholder="Last name"
+                                    value={newChild.lastName}
+                                    onChange={(e) =>
+                                      setNewChild((p) => ({
+                                        ...p,
+                                        lastName: e.target.value,
+                                      }))
+                                    }
+                                  />
+                                  <input
+                                    type="date"
+                                    className="border rounded p-1 w-full col-span-2"
+                                    value={newChild.dob}
+                                    onChange={(e) =>
+                                      setNewChild((p) => ({
+                                        ...p,
+                                        dob: e.target.value,
+                                      }))
+                                    }
+                                  />
+                                  <textarea
+                                    className="border rounded p-1 w-full col-span-2"
+                                    rows={2}
+                                    placeholder="Medical notes (optional)"
+                                    value={newChild.medical}
+                                    onChange={(e) =>
+                                      setNewChild((p) => ({
+                                        ...p,
+                                        medical: e.target.value,
+                                      }))
+                                    }
+                                  />
+                                </div>
+                                <div className="mt-2">
                                   <button
-                                    className="text-sm bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded"
-                                    onClick={() => setEditMode(true)}
+                                    className="text-sm bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded disabled:opacity-60"
+                                    disabled={
+                                      !newChild.firstName || savingChild
+                                    }
+                                    onClick={addChild}
                                   >
-                                    Add Child
+                                    {savingChild ? "Adding…" : "Add Child"}
                                   </button>
-                                )}
+                                </div>
                               </div>
-                              {/* END Add Child entry */}
+                              {/* END Add Child form */}
                             </div>
                           </div>
                         </div>
-
-                      {Array.isArray(detail.children) && detail.children.length > 1 && (
-                        <>
-                          {(detail.children || []).map((child) => {
-                            const childEnrollments = (detail.enrollments || []).filter((e) => String(e.childId) === String(child._id));
-                            const selected = addClassByChild[String(child._id)] || "";
-                            const dup = childEnrollments.some((e) => String(e.classId || e.class?._id) === String(selected));
-                            const setSelected = (val) => setAddClassByChild((prev) => ({ ...prev, [String(child._id)]: val }));
-                            const addForChild = async () => {
-                              setAddChildId(String(child._id));
-                              setAddClassId(String(selected));
-                              await addEnrollment();
-                              setAddClassByChild((prev) => ({ ...prev, [String(child._id)]: "" }));
-                            };
-                            const childName = [child.firstName, child.lastName].filter(Boolean).join(" ");
-                            return (
-                              <div className="bg-gray-50 border rounded p-4" key={String(child._id)}>
-                                <div className="flex items-center justify-between mb-2">
-                                  <h3 className="font-semibold">{childName ? `Enrolled Classes - ${childName}` : "Enrolled Classes"}</h3>
-                                  <button className="text-sm text-blue-600 hover:underline" onClick={() => setEnrollEdit((v) => !v)}>
-                                    {enrollEdit ? "Done" : "Edit"}
-                                  </button>
-                                </div>
-                                {childEnrollments.length > 0 ? (
-                                  <div className="rounded border border-gray-200 overflow-hidden">
-                                    <table className="min-w-full text-sm">
-                                      <thead className="bg-gray-100">
-                                        <tr>
-                                          <th className="px-3 py-2 border text-left">Class</th>
-                                          <th className="px-3 py-2 border text-left">Schedule</th>
-                                          <th className="px-3 py-2 border text-left">Teacher</th>
-                                          <th className="px-3 py-2 border text-left">Status</th>
-                                          {enrollEdit && (<th className="px-3 py-2 border text-left">Actions</th>)}
-                                        </tr>
-                                      </thead>
-                                      <tbody>
-                                        {childEnrollments.map((e) => (
-                                          <tr key={e._id} className="hover:bg-gray-50">
-                                            <td className="px-3 py-2 border">
-                                              {enrollEdit ? (
-                                                <select
-                                                  className="border rounded px-2 py-1 text-sm"
-                                                  defaultValue={String(e.class?._id || "")}
-                                                  onChange={(ev) =>
-                                                    changeEnrollment(
-                                                      String(child._id),
-                                                      String(e.class?._id || e.classId),
-                                                      ev.target.value
-                                                    )
-                                                  }
-                                                >
-                                                  <option value="">Select class</option>
-                                                  {classes.map((c) => {
-                                                    const enrolled = Number(c.studentCount || 0);
-                                                    const cap = c.capacity != null ? String(c.capacity) : "8";
-                                                    const label = `${c.name} - ${c.day || ""} ${c.time || ""} (${enrolled}/${cap})`;
-                                                    return (
-                                                      <option key={c._id} value={c._id}>{label}</option>
-                                                    );
-                                                  })}
-                                                </select>
-                                              ) : (
-                                                e.class?.name || ""
-                                              )}
-                                            </td>
-                                            <td className="px-3 py-2 border">{[e.class?.day, e.class?.time].filter(Boolean).join(" | ")}</td>
-                                            <td className="px-3 py-2 border">{e.class?.instructor || "TBA"}</td>
-                                            <td className="px-3 py-2 border capitalize">{e.status || "active"}</td>
-                                            {enrollEdit && (
-                                              <td className="px-3 py-2 border">
-                                                <button className="text-sm text-red-600 hover:underline" onClick={() => removeEnrollment(String(e.class?._id || e.classId), String(child._id))}>
-                                                  Remove
-                                                </button>
-                                              </td>
-                                            )}
-                                          </tr>
-                                        ))}
-                                      </tbody>
-                                    </table>
-                                  </div>
-                                ) : (
-                                  <p className="text-sm text-gray-600">No enrollments yet.</p>
-                                )}
-                                {enrollEdit && (
-                                  <div className="mt-3 flex items-center gap-2">
-                                    <select className="border rounded px-2 py-1 text-sm" value={selected} onChange={(e) => setSelected(e.target.value)}>
-                                      <option value="">Add to class.</option>
-                                      {classes.map((c) => {
-                                        const enrolled = Number(c.studentCount || 0);
-                                        const cap = c.capacity != null ? String(c.capacity) : "8";
-                                        const label = `${c.name} - ${c.day || ""} ${c.time || ""} (${enrolled}/${cap})`;
-                                        return (
-                                          <option key={c._id} value={c._id}>{label}</option>
-                                        );
-                                      })}
-                                    </select>
-                                    <button className="text-sm bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded disabled:opacity-60" disabled={!selected || dup} onClick={addForChild}>
-                                      {dup ? "Already enrolled" : "Add"}
-                                    </button>
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </>
                       )}
 
-                      {(Array.isArray(detail.children) ? detail.children.length : 0) <= 1 && (
                       <div className="bg-gray-50 border rounded p-4">
                         <div className="flex items-center justify-between mb-2">
                           <h3 className="font-semibold">
                             {(() => {
-                              const children = Array.isArray(detail?.children) ? detail.children : [];
-                              const chosen = children.length === 1 ? children[0] : null;
-                              const name = [chosen?.firstName, chosen?.lastName].filter(Boolean).join(" ");
-                              return name ? `Enrolled Classes - ${name}` : "Enrolled Classes";
+                              const children = Array.isArray(detail?.children)
+                                ? detail.children
+                                : [];
+                              const chosen =
+                                children.length === 1
+                                  ? children[0]
+                                  : children.find(
+                                      (c) =>
+                                        String(c._id) === String(addChildId)
+                                    );
+                              const name = [chosen?.firstName, chosen?.lastName]
+                                .filter(Boolean)
+                                .join(" ");
+                              return name
+                                ? `${name} - Enrolled Classes`
+                                : "Enrolled Classes";
                             })()}
                           </h3>
                           <button
@@ -1071,7 +1178,7 @@ export default function AdminUsersPage() {
                                               c.capacity != null
                                                 ? String(c.capacity)
                                                 : "8";
-                                            const label = `${c.name} - ${
+                                            const label = `${c.name} — ${
                                               c.day || ""
                                             } ${
                                               c.time || ""
@@ -1139,7 +1246,7 @@ export default function AdminUsersPage() {
                                       setAddChildId(e.target.value)
                                     }
                                   >
-                                    <option value="">Select...</option>
+                                    <option value="">Select…</option>
                                     {(detail?.children || []).map((ch) => (
                                       <option key={ch._id} value={ch._id}>
                                         {[ch.firstName, ch.lastName]
@@ -1155,12 +1262,12 @@ export default function AdminUsersPage() {
                               value={addClassId}
                               onChange={(e) => setAddClassId(e.target.value)}
                             >
-                              <option value="">Add to class...</option>
+                              <option value="">Add to class…</option>
                               {classes.map((c) => {
                                 const enrolled = Number(c.studentCount || 0);
                                 const cap =
                                   c.capacity != null ? String(c.capacity) : "8";
-                                const label = `${c.name} - ${c.day || ""} ${
+                                const label = `${c.name} — ${c.day || ""} ${
                                   c.time || ""
                                 } (${enrolled}/${cap})`;
                                 return (
@@ -1175,7 +1282,7 @@ export default function AdminUsersPage() {
                               disabled={
                                 !addClassId ||
                                 !addChildId ||
-                                (uniqueEnrollments || []).some(
+                                (detail?.enrollments || []).some(
                                   (e) =>
                                     String(e.childId) === String(addChildId) &&
                                     String(e.classId || e.class?._id) ===
@@ -1184,7 +1291,7 @@ export default function AdminUsersPage() {
                               }
                               onClick={addEnrollment}
                             >
-                              {(uniqueEnrollments || []).some(
+                              {(detail?.enrollments || []).some(
                                 (e) =>
                                   String(e.childId) === String(addChildId) &&
                                   String(e.classId || e.class?._id) ===
@@ -1196,7 +1303,6 @@ export default function AdminUsersPage() {
                           </div>
                         )}
                       </div>
-                      )}
 
                       <div className="bg-gray-50 border rounded p-4">
                         <h3 className="font-semibold mb-2">Payments</h3>
@@ -1256,6 +1362,3 @@ export default function AdminUsersPage() {
     </DashboardLayout>
   );
 }
-
-
-
