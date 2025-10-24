@@ -25,42 +25,27 @@ export async function GET(_req, context) {
     }
 
     const payments = await db.collection("payments").find({ email: ci }).toArray();
+    const children = await db.collection("children").find({ userId: user._id }).toArray();
 
-    // Enrollments for this user with class details
+    // Enrollments for this user with class + child details
     const enrollments = await db
       .collection("enrollments")
       .aggregate([
         { $match: { userId: user._id } },
-        {
-          $lookup: {
-            from: "classes",
-            localField: "classId",
-            foreignField: "_id",
-            as: "class",
-          },
-        },
+        { $lookup: { from: "classes", localField: "classId", foreignField: "_id", as: "class" } },
         { $unwind: { path: "$class", preserveNullAndEmptyArrays: true } },
-        {
-          $project: {
-            _id: 1,
-            status: 1,
-            createdAt: 1,
-            classId: 1,
-            class: {
-              _id: "$class._id",
-              name: "$class.name",
-              day: "$class.day",
-              time: "$class.time",
-              instructor: "$class.instructor",
-            },
-          },
-        },
+        { $lookup: { from: "children", localField: "childId", foreignField: "_id", as: "child" } },
+        { $unwind: { path: "$child", preserveNullAndEmptyArrays: true } },
+        { $project: { _id: 1, status: 1, createdAt: 1, classId: 1, childId: 1,
+            class: { _id: "$class._id", name: "$class.name", day: "$class.day", time: "$class.time", instructor: "$class.instructor" },
+            child: { _id: "$child._id", firstName: "$child.firstName", lastName: "$child.lastName", dob: "$child.dob" }
+        } },
       ])
       .toArray();
 
     const enrollmentCount = Array.isArray(enrollments) ? enrollments.length : 0;
     return new Response(
-      JSON.stringify({ user, enrollments, payments, enrollmentCount }),
+      JSON.stringify({ user, children, enrollments, payments, enrollmentCount }),
       { status: 200 }
     );
   } catch (error) {
@@ -136,18 +121,21 @@ export async function PATCH(req, context) {
     // Return the same shape as GET after update
     const user = await db.collection("users").findOne({ email: ci });
     const payments = await db.collection("payments").find({ email: ci }).toArray();
+    const children = await db.collection("children").find({ userId: user?._id }).toArray();
     const enrollments = await db
       .collection("enrollments")
       .aggregate([
         { $match: { userId: user?._id } },
         { $lookup: { from: "classes", localField: "classId", foreignField: "_id", as: "class" } },
         { $unwind: { path: "$class", preserveNullAndEmptyArrays: true } },
-        { $project: { _id: 1, status: 1, createdAt: 1, classId: 1, class: { _id: "$class._id", name: "$class.name", day: "$class.day", time: "$class.time", instructor: "$class.instructor" } } },
+        { $lookup: { from: "children", localField: "childId", foreignField: "_id", as: "child" } },
+        { $unwind: { path: "$child", preserveNullAndEmptyArrays: true } },
+        { $project: { _id: 1, status: 1, createdAt: 1, classId: 1, childId: 1, class: { _id: "$class._id", name: "$class.name", day: "$class.day", time: "$class.time", instructor: "$class.instructor" }, child: { _id: "$child._id", firstName: "$child.firstName", lastName: "$child.lastName", dob: "$child.dob" } } },
       ])
       .toArray();
 
     const enrollmentCount = Array.isArray(enrollments) ? enrollments.length : 0;
-    return new Response(JSON.stringify({ user, enrollments, payments, enrollmentCount }), { status: 200 });
+    return new Response(JSON.stringify({ user, children, enrollments, payments, enrollmentCount }), { status: 200 });
   } catch (error) {
     console.error("[customers:email] PATCH error:", error);
     return new Response(JSON.stringify({ error: "Internal server error" }), { status: 500 });

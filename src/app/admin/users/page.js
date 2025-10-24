@@ -17,6 +17,16 @@ export default function AdminUsersPage() {
   const [classes, setClasses] = useState([]);
   const [enrollEdit, setEnrollEdit] = useState(false);
   const [addClassId, setAddClassId] = useState("");
+  const [addChildId, setAddChildId] = useState("");
+
+  // NEW: state for Add Child form
+  const [newChild, setNewChild] = useState({
+    firstName: "",
+    lastName: "",
+    dob: "",
+    medical: "",
+  });
+  const [savingChild, setSavingChild] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -61,11 +71,16 @@ export default function AdminUsersPage() {
     const u = detail.user;
     setForm({
       phone: u.phone || "",
-      parent: { firstName: u.parent?.firstName || "", lastName: u.parent?.lastName || "" },
+      parent: {
+        firstName: u.parent?.firstName || "",
+        lastName: u.parent?.lastName || "",
+      },
       child: {
         firstName: u.child?.firstName || "",
         lastName: u.child?.lastName || "",
-        dob: u.child?.dob ? new Date(u.child.dob).toISOString().slice(0, 10) : "",
+        dob: u.child?.dob
+          ? new Date(u.child.dob).toISOString().slice(0, 10)
+          : "",
       },
       address: {
         houseNumber: u.address?.houseNumber || "",
@@ -102,11 +117,14 @@ export default function AdminUsersPage() {
     if (!detail?.user?.email || !form) return;
     try {
       setSaving(true);
-      const res = await fetch(`/api/customers/${encodeURIComponent(detail.user.email)}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
-      });
+      const res = await fetch(
+        `/api/customers/${encodeURIComponent(detail.user.email)}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(form),
+        }
+      );
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to save changes");
       setDetail(data);
@@ -118,13 +136,46 @@ export default function AdminUsersPage() {
     }
   }
 
+  // NEW: Add Child function
+  async function addChild() {
+    if (!detail?.user?._id || !newChild.firstName) return;
+    try {
+      setSavingChild(true);
+      const res = await fetch("/api/children", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: detail.user._id,
+          firstName: newChild.firstName,
+          lastName: newChild.lastName,
+          dob: newChild.dob,
+          medical: newChild.medical,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Failed to add child");
+      // reset form
+      setNewChild({ firstName: "", lastName: "", dob: "", medical: "" });
+      // refresh user details so the new child appears in pickers/tables
+      await openUserDetails(detail.user.email);
+    } catch (e) {
+      alert(e.message || String(e));
+    } finally {
+      setSavingChild(false);
+    }
+  }
+
   async function addEnrollment() {
-    if (!detail?.user?._id || !addClassId) return;
+    if (!detail?.user?._id || !addClassId || !addChildId) return;
     try {
       const res = await fetch("/api/enrollments", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: detail.user._id, classId: addClassId }),
+        body: JSON.stringify({
+          userId: detail.user._id,
+          childId: addChildId,
+          classId: addClassId,
+        }),
       });
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
@@ -133,19 +184,20 @@ export default function AdminUsersPage() {
       // refresh detail
       await openUserDetails(detail.user.email);
       setAddClassId("");
+      setAddChildId("");
     } catch (e) {
       alert(e.message || String(e));
     }
   }
 
-  async function removeEnrollment(classId) {
-    if (!detail?.user?._id || !classId) return;
+  async function removeEnrollment(classId, childId) {
+    if (!detail?.user?._id || !classId || !childId) return;
     if (!confirm("Remove this enrollment?")) return;
     try {
       const res = await fetch("/api/enrollments", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: detail.user._id, classId }),
+        body: JSON.stringify({ userId: detail.user._id, childId, classId }),
       });
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
@@ -157,20 +209,28 @@ export default function AdminUsersPage() {
     }
   }
 
-  async function changeEnrollment(oldClassId, newClassId) {
-    if (!newClassId || newClassId === oldClassId) return;
+  async function changeEnrollment(childId, oldClassId, newClassId) {
+    if (!newClassId || newClassId === oldClassId || !childId) return;
     // Add new, then remove old
     try {
       const res = await fetch("/api/enrollments", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: detail.user._id, classId: newClassId }),
+        body: JSON.stringify({
+          userId: detail.user._id,
+          childId,
+          classId: newClassId,
+        }),
       });
       if (!res.ok) throw new Error("Failed to enroll in new class");
       const resDel = await fetch("/api/enrollments", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: detail.user._id, classId: oldClassId }),
+        body: JSON.stringify({
+          userId: detail.user._id,
+          childId,
+          classId: oldClassId,
+        }),
       });
       if (!resDel.ok) throw new Error("Failed to remove old enrollment");
       await openUserDetails(detail.user.email);
@@ -287,11 +347,27 @@ export default function AdminUsersPage() {
                     <h2 className="text-lg font-semibold">User Details</h2>
                     <div className="flex items-center gap-3">
                       {!editMode ? (
-                        <button onClick={startEdit} className="text-sm text-blue-600 hover:underline">Edit</button>
+                        <button
+                          onClick={startEdit}
+                          className="text-sm text-blue-600 hover:underline"
+                        >
+                          Edit
+                        </button>
                       ) : (
                         <>
-                          <button onClick={() => setEditMode(false)} className="text-sm text-gray-600 hover:underline">Cancel</button>
-                          <button onClick={saveEdits} disabled={saving} className="text-sm text-white bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded disabled:opacity-60">{saving ? "Saving..." : "Save"}</button>
+                          <button
+                            onClick={() => setEditMode(false)}
+                            className="text-sm text-gray-600 hover:underline"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            onClick={saveEdits}
+                            disabled={saving}
+                            className="text-sm text-white bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded disabled:opacity-60"
+                          >
+                            {saving ? "Saving..." : "Save"}
+                          </button>
                         </>
                       )}
                       <button
@@ -331,42 +407,112 @@ export default function AdminUsersPage() {
                                 const birth = new Date(dob);
                                 if (isNaN(birth)) return null;
                                 const today = new Date();
-                                let age = today.getFullYear() - birth.getFullYear();
+                                let age =
+                                  today.getFullYear() - birth.getFullYear();
                                 const m = today.getMonth() - birth.getMonth();
-                                if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
+                                if (
+                                  m < 0 ||
+                                  (m === 0 && today.getDate() < birth.getDate())
+                                )
+                                  age--;
                                 return age;
                               };
                               const derivedAge =
                                 yearsFromDob(detail.user?.child?.dob) ??
-                                (Number(detail.user?.child?.age ?? detail.user?.age) || null);
+                                (Number(
+                                  detail.user?.child?.age ?? detail.user?.age
+                                ) ||
+                                  null);
                               return (
                                 <>
                                   <div>
-                                    <div className="text-gray-500 text-sm">Parent</div>
+                                    <div className="text-gray-500 text-sm">
+                                      Parent
+                                    </div>
                                     <div className="font-medium">
-                                    {editMode ? (
-                                      <div className="grid grid-cols-2 gap-2 text-sm">
-                                        <input className="border rounded p-1 w-full text-sm" placeholder="First name" value={form?.parent?.firstName || ""} onChange={(e)=>updateField("parent.firstName", e.target.value)} />
-                                        <input className="border rounded p-1 w-full text-sm" placeholder="Last name" value={form?.parent?.lastName || ""} onChange={(e)=>updateField("parent.lastName", e.target.value)} />
-                                      </div>
-                                    ) : (parentName || "-")}
+                                      {editMode ? (
+                                        <div className="grid grid-cols-2 gap-2 text-sm">
+                                          <input
+                                            className="border rounded p-1 w-full text-sm"
+                                            placeholder="First name"
+                                            value={
+                                              form?.parent?.firstName || ""
+                                            }
+                                            onChange={(e) =>
+                                              updateField(
+                                                "parent.firstName",
+                                                e.target.value
+                                              )
+                                            }
+                                          />
+                                          <input
+                                            className="border rounded p-1 w-full text-sm"
+                                            placeholder="Last name"
+                                            value={form?.parent?.lastName || ""}
+                                            onChange={(e) =>
+                                              updateField(
+                                                "parent.lastName",
+                                                e.target.value
+                                              )
+                                            }
+                                          />
+                                        </div>
+                                      ) : (
+                                        parentName || "-"
+                                      )}
                                     </div>
                                   </div>
 
                                   <div>
-                                    <div className="text-gray-500 text-sm">Child | Age</div>
+                                    <div className="text-gray-500 text-sm">
+                                      Child | Age
+                                    </div>
                                     <div className="font-medium">
                                       {editMode ? (
-                                      <div className="grid grid-cols-2 gap-2 text-sm">
-                                        <input className="border rounded p-1 w-full text-sm" placeholder="First name" value={form?.child?.firstName || ""} onChange={(e)=>updateField("child.firstName", e.target.value)} />
-                                        <input className="border rounded p-1 w-full text-sm" placeholder="Last name" value={form?.child?.lastName || ""} onChange={(e)=>updateField("child.lastName", e.target.value)} />
-                                        <input className="border rounded p-1 w-full col-span-2 text-sm" type="date" value={form?.child?.dob || ""} onChange={(e)=>updateField("child.dob", e.target.value)} />
-                                      </div>
-                                    ) : (
+                                        <div className="grid grid-cols-2 gap-2 text-sm">
+                                          <input
+                                            className="border rounded p-1 w-full text-sm"
+                                            placeholder="First name"
+                                            value={form?.child?.firstName || ""}
+                                            onChange={(e) =>
+                                              updateField(
+                                                "child.firstName",
+                                                e.target.value
+                                              )
+                                            }
+                                          />
+                                          <input
+                                            className="border rounded p-1 w-full text-sm"
+                                            placeholder="Last name"
+                                            value={form?.child?.lastName || ""}
+                                            onChange={(e) =>
+                                              updateField(
+                                                "child.lastName",
+                                                e.target.value
+                                              )
+                                            }
+                                          />
+                                          <input
+                                            className="border rounded p-1 w-full col-span-2 text-sm"
+                                            type="date"
+                                            value={form?.child?.dob || ""}
+                                            onChange={(e) =>
+                                              updateField(
+                                                "child.dob",
+                                                e.target.value
+                                              )
+                                            }
+                                          />
+                                        </div>
+                                      ) : (
                                         <>
                                           {childName || "-"}
                                           {derivedAge != null ? (
-                                            <span>{childName ? ` | ${derivedAge}` : ` ${derivedAge}`}</span>
+                                            <span>
+                                              {childName
+                                                ? ` | ${derivedAge}`
+                                                : ` ${derivedAge}`}
+                                            </span>
                                           ) : null}
                                         </>
                                       )}
@@ -374,31 +520,60 @@ export default function AdminUsersPage() {
                                   </div>
 
                                   <div>
-                                    <div className="text-gray-500 text-sm">Email</div>
-                                    <div className="font-medium">{detail.user?.email}</div>
-                                  </div>
-
-                                  <div>
-                                    <div className="text-gray-500 text-sm">Phone</div>
+                                    <div className="text-gray-500 text-sm">
+                                      Email
+                                    </div>
                                     <div className="font-medium">
-                                    {editMode ? (
-                                      <input className="border rounded p-1 w-full text-sm" value={form?.phone || ""} onChange={(e)=>updateField("phone", e.target.value)} />
-                                    ) : (detail.user?.phone || "-")}
+                                      {detail.user?.email}
                                     </div>
                                   </div>
 
                                   <div>
-                                    <div className="text-gray-500 text-sm">Role</div>
-                                    <div className="font-medium">{detail.user?.role || "customer"}</div>
+                                    <div className="text-gray-500 text-sm">
+                                      Phone
+                                    </div>
+                                    <div className="font-medium">
+                                      {editMode ? (
+                                        <input
+                                          className="border rounded p-1 w-full text-sm"
+                                          value={form?.phone || ""}
+                                          onChange={(e) =>
+                                            updateField("phone", e.target.value)
+                                          }
+                                        />
+                                      ) : (
+                                        detail.user?.phone || "-"
+                                      )}
+                                    </div>
                                   </div>
 
                                   <div>
-                                    <div className="text-gray-500 text-sm">Membership</div>
-                                    <div className="font-medium">{detail.user?.membership?.status || "none"}</div>
+                                    <div className="text-gray-500 text-sm">
+                                      Role
+                                    </div>
+                                    <div className="font-medium">
+                                      {detail.user?.role || "customer"}
+                                    </div>
+                                  </div>
+
+                                  <div>
+                                    <div className="text-gray-500 text-sm">
+                                      Membership
+                                    </div>
+                                    <div className="font-medium">
+                                      {detail.user?.membership?.status ||
+                                        "none"}
+                                    </div>
                                   </div>
                                   <div>
-                                    <div className="text-gray-500 text-sm">Classes</div>
-                                    <div className="font-medium">{(Array.isArray(detail?.enrollments) ? detail.enrollments.length : (detail?.enrollmentCount ?? 0))}</div>
+                                    <div className="text-gray-500 text-sm">
+                                      Classes
+                                    </div>
+                                    <div className="font-medium">
+                                      {Array.isArray(detail?.enrollments)
+                                        ? detail.enrollments.length
+                                        : detail?.enrollmentCount ?? 0}
+                                    </div>
                                   </div>
                                 </>
                               );
@@ -406,21 +581,75 @@ export default function AdminUsersPage() {
                           </div>
                           <div className="space-y-2 text-sm">
                             <div>
-                              <div className="text-gray-500 text-sm">Address</div>
+                              <div className="text-gray-500 text-sm">
+                                Address
+                              </div>
                               {editMode ? (
                                 <div className="grid grid-cols-2 gap-2 text-sm">
-                                  <input className="border rounded p-1 col-span-1 w-full text-sm" placeholder="House number" value={form?.address?.houseNumber || ""} onChange={(e)=>updateField("address.houseNumber", e.target.value)} />
-                                  <input className="border rounded p-1 col-span-1 w-full text-sm" placeholder="Street" value={form?.address?.street || ""} onChange={(e)=>updateField("address.street", e.target.value)} />
-                                  <input className="border rounded p-1 col-span-1 w-full text-sm" placeholder="City" value={form?.address?.city || ""} onChange={(e)=>updateField("address.city", e.target.value)} />
-                                  <input className="border rounded p-1 col-span-1 w-full text-sm" placeholder="County" value={form?.address?.county || ""} onChange={(e)=>updateField("address.county", e.target.value)} />
-                                  <input className="border rounded p-1 col-span-2 w-full text-sm" placeholder="Postcode" value={form?.address?.postcode || ""} onChange={(e)=>updateField("address.postcode", e.target.value)} />
+                                  <input
+                                    className="border rounded p-1 col-span-1 w-full text-sm"
+                                    placeholder="House number"
+                                    value={form?.address?.houseNumber || ""}
+                                    onChange={(e) =>
+                                      updateField(
+                                        "address.houseNumber",
+                                        e.target.value
+                                      )
+                                    }
+                                  />
+                                  <input
+                                    className="border rounded p-1 col-span-1 w-full text-sm"
+                                    placeholder="Street"
+                                    value={form?.address?.street || ""}
+                                    onChange={(e) =>
+                                      updateField(
+                                        "address.street",
+                                        e.target.value
+                                      )
+                                    }
+                                  />
+                                  <input
+                                    className="border rounded p-1 col-span-1 w-full text-sm"
+                                    placeholder="City"
+                                    value={form?.address?.city || ""}
+                                    onChange={(e) =>
+                                      updateField(
+                                        "address.city",
+                                        e.target.value
+                                      )
+                                    }
+                                  />
+                                  <input
+                                    className="border rounded p-1 col-span-1 w-full text-sm"
+                                    placeholder="County"
+                                    value={form?.address?.county || ""}
+                                    onChange={(e) =>
+                                      updateField(
+                                        "address.county",
+                                        e.target.value
+                                      )
+                                    }
+                                  />
+                                  <input
+                                    className="border rounded p-1 col-span-2 w-full text-sm"
+                                    placeholder="Postcode"
+                                    value={form?.address?.postcode || ""}
+                                    onChange={(e) =>
+                                      updateField(
+                                        "address.postcode",
+                                        e.target.value
+                                      )
+                                    }
+                                  />
                                 </div>
                               ) : (
                                 <div className="font-medium whitespace-pre-line text-sm">
                                   {(() => {
                                     const a = detail.user?.address || {};
                                     const lines = [
-                                      [a?.houseNumber, a?.street].filter(Boolean).join(" "),
+                                      [a?.houseNumber, a?.street]
+                                        .filter(Boolean)
+                                        .join(" "),
                                       a?.city,
                                       a?.county,
                                       a?.postcode,
@@ -433,12 +662,46 @@ export default function AdminUsersPage() {
                               )}
                             </div>
                             <div>
-                              <div className="text-gray-500 text-sm">Emergency Contact</div>
+                              <div className="text-gray-500 text-sm">
+                                Emergency Contact
+                              </div>
                               {editMode ? (
                                 <div className="grid grid-cols-3 gap-2 text-sm">
-                                  <input className="border rounded p-1 col-span-1 w-full text-sm" placeholder="Name" value={form?.emergencyContact?.name || ""} onChange={(e)=>updateField("emergencyContact.name", e.target.value)} />
-                                  <input className="border rounded p-1 col-span-1 w-full text-sm" placeholder="Phone" value={form?.emergencyContact?.phone || ""} onChange={(e)=>updateField("emergencyContact.phone", e.target.value)} />
-                                  <input className="border rounded p-1 col-span-1 w-full text-sm" placeholder="Relation" value={form?.emergencyContact?.relation || ""} onChange={(e)=>updateField("emergencyContact.relation", e.target.value)} />
+                                  <input
+                                    className="border rounded p-1 col-span-1 w-full text-sm"
+                                    placeholder="Name"
+                                    value={form?.emergencyContact?.name || ""}
+                                    onChange={(e) =>
+                                      updateField(
+                                        "emergencyContact.name",
+                                        e.target.value
+                                      )
+                                    }
+                                  />
+                                  <input
+                                    className="border rounded p-1 col-span-1 w-full text-sm"
+                                    placeholder="Phone"
+                                    value={form?.emergencyContact?.phone || ""}
+                                    onChange={(e) =>
+                                      updateField(
+                                        "emergencyContact.phone",
+                                        e.target.value
+                                      )
+                                    }
+                                  />
+                                  <input
+                                    className="border rounded p-1 col-span-1 w-full text-sm"
+                                    placeholder="Relation"
+                                    value={
+                                      form?.emergencyContact?.relation || ""
+                                    }
+                                    onChange={(e) =>
+                                      updateField(
+                                        "emergencyContact.relation",
+                                        e.target.value
+                                      )
+                                    }
+                                  />
                                 </div>
                               ) : (
                                 <div className="font-medium text-sm">
@@ -453,13 +716,88 @@ export default function AdminUsersPage() {
                               )}
                             </div>
                             <div>
-                              <div className="text-gray-500 text-sm">Medical Details</div>
+                              <div className="text-gray-500 text-sm">
+                                Medical Details
+                              </div>
                               {editMode ? (
-                                <textarea className="border rounded p-2 w-full text-sm" rows={3} value={form?.medical || ""} onChange={(e)=>updateField("medical", e.target.value)} />
+                                <textarea
+                                  className="border rounded p-2 w-full text-sm"
+                                  rows={3}
+                                  value={form?.medical || ""}
+                                  onChange={(e) =>
+                                    updateField("medical", e.target.value)
+                                  }
+                                />
                               ) : (
-                                <div className="font-medium whitespace-pre-wrap text-sm">{detail.user?.medical || "-"}</div>
+                                <div className="font-medium whitespace-pre-wrap text-sm">
+                                  {detail.user?.medical || "-"}
+                                </div>
                               )}
                             </div>
+
+                            {/* NEW: Add Child form */}
+                            <div>
+                              <div className="text-gray-500 text-sm">
+                                Add Child
+                              </div>
+                              <div className="grid grid-cols-2 gap-2 text-sm">
+                                <input
+                                  className="border rounded p-1 w-full"
+                                  placeholder="First name"
+                                  value={newChild.firstName}
+                                  onChange={(e) =>
+                                    setNewChild((p) => ({
+                                      ...p,
+                                      firstName: e.target.value,
+                                    }))
+                                  }
+                                />
+                                <input
+                                  className="border rounded p-1 w-full"
+                                  placeholder="Last name"
+                                  value={newChild.lastName}
+                                  onChange={(e) =>
+                                    setNewChild((p) => ({
+                                      ...p,
+                                      lastName: e.target.value,
+                                    }))
+                                  }
+                                />
+                                <input
+                                  type="date"
+                                  className="border rounded p-1 w-full col-span-2"
+                                  value={newChild.dob}
+                                  onChange={(e) =>
+                                    setNewChild((p) => ({
+                                      ...p,
+                                      dob: e.target.value,
+                                    }))
+                                  }
+                                />
+                                <textarea
+                                  className="border rounded p-1 w-full col-span-2"
+                                  rows={2}
+                                  placeholder="Medical notes (optional)"
+                                  value={newChild.medical}
+                                  onChange={(e) =>
+                                    setNewChild((p) => ({
+                                      ...p,
+                                      medical: e.target.value,
+                                    }))
+                                  }
+                                />
+                              </div>
+                              <div className="mt-2">
+                                <button
+                                  className="text-sm bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded disabled:opacity-60"
+                                  disabled={!newChild.firstName || savingChild}
+                                  onClick={addChild}
+                                >
+                                  {savingChild ? "Adding…" : "Add Child"}
+                                </button>
+                              </div>
+                            </div>
+                            {/* END Add Child form */}
                           </div>
                         </div>
                       </div>
@@ -467,20 +805,36 @@ export default function AdminUsersPage() {
                       <div className="bg-gray-50 border rounded p-4">
                         <div className="flex items-center justify-between mb-2">
                           <h3 className="font-semibold">Enrolled Classes</h3>
-                          <button className="text-sm text-blue-600 hover:underline" onClick={() => setEnrollEdit((v)=>!v)}>
+                          <button
+                            className="text-sm text-blue-600 hover:underline"
+                            onClick={() => setEnrollEdit((v) => !v)}
+                          >
                             {enrollEdit ? "Done" : "Edit"}
                           </button>
                         </div>
-                        {Array.isArray(detail.enrollments) && detail.enrollments.length > 0 ? (
+                        {Array.isArray(detail.enrollments) &&
+                        detail.enrollments.length > 0 ? (
                           <div className="rounded border border-gray-200 overflow-hidden">
                             <table className="min-w-full text-sm">
                               <thead className="bg-gray-100">
                                 <tr>
-                                  <th className="px-3 py-2 border text-left">Class</th>
-                                  <th className="px-3 py-2 border text-left">Schedule</th>
-                                  <th className="px-3 py-2 border text-left">Teacher</th>
-                                  <th className="px-3 py-2 border text-left">Status</th>
-                                  {enrollEdit && <th className="px-3 py-2 border text-left">Actions</th>}
+                                  <th className="px-3 py-2 border text-left">
+                                    Class
+                                  </th>
+                                  <th className="px-3 py-2 border text-left">
+                                    Schedule
+                                  </th>
+                                  <th className="px-3 py-2 border text-left">
+                                    Teacher
+                                  </th>
+                                  <th className="px-3 py-2 border text-left">
+                                    Status
+                                  </th>
+                                  {enrollEdit && (
+                                    <th className="px-3 py-2 border text-left">
+                                      Actions
+                                    </th>
+                                  )}
                                 </tr>
                               </thead>
                               <tbody>
@@ -490,16 +844,35 @@ export default function AdminUsersPage() {
                                       {enrollEdit ? (
                                         <select
                                           className="border rounded px-2 py-1 text-sm"
-                                          defaultValue={String(e.class?._id || "")}
-                                          onChange={(ev) => changeEnrollment(String(e.class?._id || e.classId), ev.target.value)}
+                                          defaultValue={String(
+                                            e.class?._id || ""
+                                          )}
+                                          onChange={(ev) =>
+                                            changeEnrollment(
+                                              String(e.childId),
+                                              String(e.class?._id || e.classId),
+                                              ev.target.value
+                                            )
+                                          }
                                         >
                                           <option value="">Select class</option>
                                           {classes.map((c) => {
-                                            const enrolled = Number(c.studentCount || 0);
-                                            const cap = c.capacity != null ? String(c.capacity) : "∞";
-                                            const label = `${c.name} — ${c.day || ''} ${c.time || ''} (${enrolled}/${cap})`;
+                                            const enrolled = Number(
+                                              c.studentCount || 0
+                                            );
+                                            const cap =
+                                              c.capacity != null
+                                                ? String(c.capacity)
+                                                : "∞";
+                                            const label = `${c.name} — ${
+                                              c.day || ""
+                                            } ${
+                                              c.time || ""
+                                            } (${enrolled}/${cap})`;
                                             return (
-                                              <option key={c._id} value={c._id}>{label}</option>
+                                              <option key={c._id} value={c._id}>
+                                                {label}
+                                              </option>
                                             );
                                           })}
                                         </select>
@@ -507,14 +880,27 @@ export default function AdminUsersPage() {
                                         e.class?.name || ""
                                       )}
                                     </td>
-                                    <td className="px-3 py-2 border">{[e.class?.day, e.class?.time].filter(Boolean).join(" | ")}</td>
-                                    <td className="px-3 py-2 border">{e.class?.instructor || "TBA"}</td>
-                                    <td className="px-3 py-2 border capitalize">{e.status || "active"}</td>
+                                    <td className="px-3 py-2 border">
+                                      {[e.class?.day, e.class?.time]
+                                        .filter(Boolean)
+                                        .join(" | ")}
+                                    </td>
+                                    <td className="px-3 py-2 border">
+                                      {e.class?.instructor || "TBA"}
+                                    </td>
+                                    <td className="px-3 py-2 border capitalize">
+                                      {e.status || "active"}
+                                    </td>
                                     {enrollEdit && (
                                       <td className="px-3 py-2 border">
                                         <button
                                           className="text-sm text-red-600 hover:underline"
-                                          onClick={() => removeEnrollment(String(e.class?._id || e.classId))}
+                                          onClick={() =>
+                                            removeEnrollment(
+                                              String(e.class?._id || e.classId),
+                                              String(e.childId)
+                                            )
+                                          }
                                         >
                                           Remove
                                         </button>
@@ -526,29 +912,51 @@ export default function AdminUsersPage() {
                             </table>
                           </div>
                         ) : (
-                          <p className="text-sm text-gray-600">No enrollments yet.</p>
+                          <p className="text-sm text-gray-600">
+                            No enrollments yet.
+                          </p>
                         )}
 
                         {enrollEdit && (
                           <div className="mt-3 flex items-center gap-2">
+                            <span className="text-sm text-gray-600">Child</span>
+                            <select
+                              className="border rounded px-2 py-1 text-sm"
+                              value={addChildId}
+                              onChange={(e) => setAddChildId(e.target.value)}
+                            >
+                              <option value="">Select…</option>
+                              {(detail?.children || []).map((ch) => (
+                                <option key={ch._id} value={ch._id}>
+                                  {[ch.firstName, ch.lastName]
+                                    .filter(Boolean)
+                                    .join(" ")}
+                                </option>
+                              ))}
+                            </select>
                             <select
                               className="border rounded px-2 py-1 text-sm"
                               value={addClassId}
-                              onChange={(e)=> setAddClassId(e.target.value)}
+                              onChange={(e) => setAddClassId(e.target.value)}
                             >
                               <option value="">Add to class…</option>
                               {classes.map((c) => {
                                 const enrolled = Number(c.studentCount || 0);
-                                const cap = c.capacity != null ? String(c.capacity) : "∞";
-                                const label = `${c.name} — ${c.day || ''} ${c.time || ''} (${enrolled}/${cap})`;
+                                const cap =
+                                  c.capacity != null ? String(c.capacity) : "∞";
+                                const label = `${c.name} — ${c.day || ""} ${
+                                  c.time || ""
+                                } (${enrolled}/${cap})`;
                                 return (
-                                  <option key={c._id} value={c._id}>{label}</option>
+                                  <option key={c._id} value={c._id}>
+                                    {label}
+                                  </option>
                                 );
                               })}
                             </select>
                             <button
                               className="text-sm bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded disabled:opacity-60"
-                              disabled={!addClassId}
+                              disabled={!addClassId || !addChildId}
                               onClick={addEnrollment}
                             >
                               Add
@@ -559,22 +967,38 @@ export default function AdminUsersPage() {
 
                       <div className="bg-gray-50 border rounded p-4">
                         <h3 className="font-semibold mb-2">Payments</h3>
-                        {Array.isArray(detail.payments) && detail.payments.length > 0 ? (
+                        {Array.isArray(detail.payments) &&
+                        detail.payments.length > 0 ? (
                           <ul className="space-y-1 text-sm">
                             {detail.payments.map((p, i) => {
-                              const currency = String(p?.currency || "GBP").toUpperCase();
+                              const currency = String(
+                                p?.currency || "GBP"
+                              ).toUpperCase();
                               const amount = Number(p?.amount) || 0;
-                              const amountText = new Intl.NumberFormat("en-GB", {
-                                style: "currency",
-                                currency,
-                                minimumFractionDigits: 0,
-                              }).format(amount);
-                              const dateText = new Date(p?.createdAt || p?.timestamp || Date.now()).toLocaleString();
-                              const status = p?.payment_status || p?.status || "paid";
+                              const amountText = new Intl.NumberFormat(
+                                "en-GB",
+                                {
+                                  style: "currency",
+                                  currency,
+                                  minimumFractionDigits: 0,
+                                }
+                              ).format(amount);
+                              const dateText = new Date(
+                                p?.createdAt || p?.timestamp || Date.now()
+                              ).toLocaleString();
+                              const status =
+                                p?.payment_status || p?.status || "paid";
                               return (
-                                <li key={i} className="flex items-center justify-between gap-3">
-                                  <span className="text-gray-600">{dateText}</span>
-                                  <span className="font-medium">{amountText}</span>
+                                <li
+                                  key={i}
+                                  className="flex items-center justify-between gap-3"
+                                >
+                                  <span className="text-gray-600">
+                                    {dateText}
+                                  </span>
+                                  <span className="font-medium">
+                                    {amountText}
+                                  </span>
                                   <span className="px-2 py-0.5 rounded bg-green-100 text-green-700 border border-green-200 capitalize">
                                     {status}
                                   </span>
@@ -583,7 +1007,9 @@ export default function AdminUsersPage() {
                             })}
                           </ul>
                         ) : (
-                          <p className="text-sm text-gray-600">No payments recorded.</p>
+                          <p className="text-sm text-gray-600">
+                            No payments recorded.
+                          </p>
                         )}
                       </div>
                     </div>

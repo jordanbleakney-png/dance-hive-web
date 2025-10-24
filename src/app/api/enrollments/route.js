@@ -9,19 +9,20 @@ export async function POST(req) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 403 });
     }
 
-    const { userId, classId } = await req.json();
-    if (!userId || !classId) {
-      return new Response(JSON.stringify({ error: "Missing userId or classId" }), { status: 400 });
+    const { userId, childId, classId } = await req.json();
+    if (!userId || !childId || !classId) {
+      return new Response(JSON.stringify({ error: "Missing userId, childId or classId" }), { status: 400 });
     }
 
     const db = await getDb();
     const userObjectId = new ObjectId(String(userId));
+    const childObjectId = new ObjectId(String(childId));
     const classObjectId = new ObjectId(String(classId));
 
     // If already enrolled, no-op
     const existing = await db
       .collection("enrollments")
-      .findOne({ userId: userObjectId, classId: classObjectId });
+      .findOne({ userId: userObjectId, childId: childObjectId, classId: classObjectId });
     if (existing) {
       return new Response(
         JSON.stringify({ message: "Already enrolled" }),
@@ -49,6 +50,7 @@ export async function POST(req) {
 
     const payload = {
       userId: userObjectId,
+      childId: childObjectId,
       classId: classObjectId,
       status: "active",
       attendedDates: [],
@@ -56,7 +58,7 @@ export async function POST(req) {
     };
 
     await db.collection("enrollments").updateOne(
-      { userId: payload.userId, classId: payload.classId },
+      { userId: payload.userId, childId: payload.childId, classId: payload.classId },
       { $setOnInsert: payload },
       { upsert: true }
     );
@@ -75,14 +77,15 @@ export async function DELETE(req) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 403 });
     }
 
-    const { userId, classId } = await req.json();
-    if (!userId || !classId) {
-      return new Response(JSON.stringify({ error: "Missing userId or classId" }), { status: 400 });
+    const { userId, childId, classId } = await req.json();
+    if (!userId || !childId || !classId) {
+      return new Response(JSON.stringify({ error: "Missing userId, childId or classId" }), { status: 400 });
     }
 
     const db = await getDb();
     await db.collection("enrollments").deleteOne({
       userId: new ObjectId(String(userId)),
+      childId: new ObjectId(String(childId)),
       classId: new ObjectId(String(classId)),
     });
 

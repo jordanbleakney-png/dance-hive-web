@@ -101,6 +101,26 @@ When a user logs in with role `customer` and membership status `none`, a welcome
   - Production plan: GoCardless mandates + subscriptions. Use `enrollmentCount` to compute monthly amount and update the GC subscription accordingly (see Billing Notes below).
 - Avoid introducing public sign-up flows - all accounts are created via trial conversion.
 
+## Project Status
+
+- Multi-child baseline in place: `children` collection added and `enrollments` now include `childId` (unique by `{ userId, childId, classId }`).
+- Admin → Users modal supports editing profile details and full enrollment management (change class, add additional classes, remove enrollment). Class selectors show capacity live and the server enforces it.
+- Teacher register is weekly, pinned to the class weekday with Today/Prev/Next controls and future-week marking disabled (UI + API guard). Attendance is per-child via enrollments.
+- API hardening: sensitive admin/teacher routes now check roles server-side; the success redirect no longer mutates membership (webhook is authoritative).
+- `enrollmentCount` is derived by the API and returned to clients. It is the driver for monthly billing when GoCardless is integrated.
+
+## Billing Plan (GoCardless)
+
+- Replace the Stripe test flow with GoCardless hosted redirect to create a customer + mandate, then create a subscription.
+- Compute the monthly amount from `enrollmentCount` (e.g., £30 × active classes, or a tiered mapping) and update the GC subscription amount. GC uses a fixed amount per subscription (no quantity field).
+- Prefer applying amount changes from the next collection date. If you need mid‑cycle adjustments, create one‑off Payments for proration.
+
+## Next Steps
+
+- Admin modal: optional “Add Child” form to create children quickly and attach enrollments.
+- Member dashboard: show per‑child enrollments and “Classes: N” summary.
+- GoCardless integration: redirect flow, webhooks, and subscription amount updates driven by `enrollmentCount`.
+
 ### Data/Index Notes
 - `enrollments` is the source of truth for who is in which class. Indexes:
   - Unique `{ userId: 1, classId: 1 }` (prevents duplicate enrollment)

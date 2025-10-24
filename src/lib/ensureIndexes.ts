@@ -27,12 +27,22 @@ export async function ensureIndexes() {
     await history.createIndex({ timestamp: -1 });
     console.log("[db] 'membershipHistory' indexes verified");
 
+    // === CHILDREN COLLECTION ===
+    const children = db.collection("children");
+    await children.createIndex({ userId: 1 });
+    await children.createIndex({ lastName: 1, firstName: 1 });
+    console.log("[db] 'children' indexes verified");
+
     // === ENROLLMENTS COLLECTION ===
     const enrollments = db.collection("enrollments");
-    // Prevent duplicate enrollment of a user into the same class
-    await enrollments.createIndex({ userId: 1, classId: 1 }, { unique: true });
+    // Replace legacy unique index (userId,classId) with (userId,childId,classId)
+    try {
+      await enrollments.dropIndex("userId_1_classId_1");
+    } catch {}
+    await enrollments.createIndex({ userId: 1, childId: 1, classId: 1 }, { unique: true });
     // Helpful single-field indexes for common queries
     await enrollments.createIndex({ userId: 1 });
+    await enrollments.createIndex({ childId: 1 });
     await enrollments.createIndex({ classId: 1 });
     console.log("[db] 'enrollments' indexes verified");
 

@@ -90,6 +90,20 @@ trialBookings schema (effective)
   - status, optional cached enrollmentCount
 - Apply changes from next charge date (simple). For proration, create one‑off Payments.
 
+## Project Status (Summary)
+
+- DB is clean of legacy test data. Normalized model is live: `children` collection + `enrollments` with `childId` (unique by `{ userId, childId, classId }`).
+- Admin → Users modal: edit profile details and per‑child enrollments (change/add/remove) with capacity display and enforcement.
+- Teacher register: weekly (locked to class weekday), mark/unmark only for current/past weeks; per‑child attendance via enrollments.
+- API returns `children[]`, `enrollments[]` (with class + child), `payments[]`, and `enrollmentCount` for admin tools.
+- Authorization checks in admin/teacher endpoints are consistent; success redirect is read‑only (webhook is authoritative).
+
+## Next Steps
+
+- Add minimal Admin “Add Child” UI and per‑child views in member dashboard.
+- Integrate GoCardless: redirect flow (mandate), create subscription with amount computed from `enrollmentCount`, and webhook processing.
+- Optional: tiered pricing rules and one‑off payment handling for mid‑cycle changes.
+
 ## 9) Migration From Stripe → GoCardless (Checklist)
 
 Prereqs

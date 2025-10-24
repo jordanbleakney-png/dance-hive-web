@@ -24,51 +24,36 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
       .collection("enrollments")
       .aggregate([
         { $match: { classId } },
-        {
-          $lookup: {
-            from: "users",
-            localField: "userId",
-            foreignField: "_id",
-            as: "user",
-          },
-        },
+        { $lookup: { from: "users", localField: "userId", foreignField: "_id", as: "user" } },
         { $unwind: "$user" },
+        { $lookup: { from: "children", localField: "childId", foreignField: "_id", as: "child" } },
+        { $unwind: { path: "$child", preserveNullAndEmptyArrays: true } },
         {
           $addFields: {
             "user.name": {
               $ifNull: [
                 "$user.name",
-                {
-                  $trim: {
-                    input: {
-                      $concat: [
-                        { $ifNull: ["$user.parent.firstName", ""] },
-                        " ",
-                        { $ifNull: ["$user.parent.lastName", ""] },
-                      ],
-                    },
-                  },
-                },
-              ],
-            },
-          },
+                { $trim: { input: { $concat: [ { $ifNull: ["$user.parent.firstName", ""] }, " ", { $ifNull: ["$user.parent.lastName", ""] } ] } } }
+              ]
+            }
+          }
         },
         {
           $project: {
             _id: 1,
             userId: 1,
+            childId: 1,
             classId: 1,
             status: 1,
             attendedDates: 1,
             "user.name": 1,
             "user.email": 1,
             "user.phone": 1,
-            "user.child": 1,
             "user.parent": 1,
-            "user.medical": 1,
             "user.emergencyContact": 1,
-          },
-        },
+            child: { firstName: "$child.firstName", lastName: "$child.lastName", dob: "$child.dob", medical: "$child.medical" }
+          }
+        }
       ])
       .toArray();
 
@@ -118,16 +103,18 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { userId } = await req.json();
-    if (!userId) {
-      return NextResponse.json({ error: "Missing userId" }, { status: 400 });
+    const { userId, childId } = await req.json();
+    if (!userId || !childId) {
+      return NextResponse.json({ error: "Missing userId or childId" }, { status: 400 });
     }
 
     let classId: ObjectId;
     let uId: ObjectId;
+    let cId: ObjectId;
     try {
       classId = new ObjectId(params.id);
       uId = new ObjectId(String(userId));
+      cId = new ObjectId(String(childId));
     } catch {
       return NextResponse.json({ error: "Invalid ids" }, { status: 400 });
     }
@@ -135,7 +122,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     const db = await getDb();
 
     // If already enrolled, no-op
-    const existing = await db.collection("enrollments").findOne({ userId: uId, classId });
+    const existing = await db.collection("enrollments").findOne({ userId: uId, childId: cId, classId });
     if (existing) {
       return NextResponse.json({ message: "Already enrolled" }, { status: 200 });
     }
@@ -157,8 +144,8 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     }
 
     await db.collection("enrollments").updateOne(
-      { userId: uId, classId },
-      { $setOnInsert: { userId: uId, classId, status: "active", attendedDates: [], createdAt: new Date() } },
+      { userId: uId, childId: cId, classId },
+      { $setOnInsert: { userId: uId, childId: cId, classId, status: "active", attendedDates: [], createdAt: new Date() } },
       { upsert: true }
     );
 

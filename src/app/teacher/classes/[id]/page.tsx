@@ -193,7 +193,7 @@ export default function TeacherClassRegisterPage() {
             </thead>
             <tbody>
               {data.enrollments.map((e) => {
-                const childFull = [e?.user?.child?.firstName, e?.user?.child?.lastName]
+                const childFull = [e?.child?.firstName, e?.child?.lastName]
                   .filter(Boolean)
                   .join(" ") || e?.user?.name || "-";
                 const contact = e?.user?.phone || e?.user?.parentPhone || "-";
@@ -205,7 +205,7 @@ export default function TeacherClassRegisterPage() {
                   <td className="px-4 py-2 border">{childFull}</td>
                   <td className="px-4 py-2 border">{[e?.user?.parent?.firstName, e?.user?.parent?.lastName].filter(Boolean).join(" ") || "-"}</td>
                   <td className="px-4 py-2 border">{contact}</td>
-                  <td className="px-4 py-2 border">{e.user?.medical || "-"}</td>
+                  <td className="px-4 py-2 border">{e?.child?.medical || e.user?.medical || "-"}</td>
                   <td className="px-4 py-2 border">{attendedSelected ? "Yes" : "No"}</td>
                   <td className="px-4 py-2 border">{(e.attendedDates || []).length}</td>
                   <td className="px-4 py-2 border text-center">

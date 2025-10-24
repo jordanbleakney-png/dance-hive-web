@@ -62,11 +62,21 @@ async function createIndexes() {
     console.log("[indexes] Created indexes for 'membershipHistory'");
 
     // ================================
+    // CHILDREN COLLECTION
+    // ================================
+    const children = db.collection("children");
+    await children.createIndex({ userId: 1 });
+    await children.createIndex({ lastName: 1, firstName: 1 });
+    console.log("[indexes] Created indexes for 'children'");
+
+    // ================================
     // ENROLLMENTS COLLECTION
     // ================================
     const enrollments = db.collection("enrollments");
-    await enrollments.createIndex({ userId: 1, classId: 1 }, { unique: true });
+    try { await enrollments.dropIndex("userId_1_classId_1"); } catch {}
+    await enrollments.createIndex({ userId: 1, childId: 1, classId: 1 }, { unique: true });
     await enrollments.createIndex({ userId: 1 });
+    await enrollments.createIndex({ childId: 1 });
     await enrollments.createIndex({ classId: 1 });
     console.log("[indexes] Created indexes for 'enrollments'");
 
