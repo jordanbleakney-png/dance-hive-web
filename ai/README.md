@@ -1,4 +1,4 @@
-# Dance Hive - System Overview & Development Guide
+﻿# Dance Hive - System Overview & Development Guide
 
 Purpose: Give contributors and AI tools a precise, up-to-date picture of Dance Hive's product flow and implementation guardrails. Self-service sign-up is disabled. All accounts originate from trial conversions managed by staff.
 
@@ -35,15 +35,15 @@ trialBookings schema (effective)
 - Testing used Stripe, but production will use GoCardless (GC).
 - Flow: user clicks "Become a Member" -> GC hosted redirect to create customer + mandate -> create GC subscription.
 - Billing amount is computed from enrollmentCount (see Section 5/8):
-  - Linear (£30 × active classes) or tiered mapping (e.g., 1=£30, 2=£55, 3=£75).
-  - Update GC subscription amount when enrollments change (effective from next collection date). For mid‑cycle proration, optionally create a one‑off Payment.
+  - Linear (Â£30 Ã— active classes) or tiered mapping (e.g., 1=Â£30, 2=Â£55, 3=Â£75).
+  - Update GC subscription amount when enrollments change (effective from next collection date). For midâ€‘cycle proration, optionally create a oneâ€‘off Payment.
 - Webhooks: record successful payments, activate/keep membership, and handle mandate or subscription failures.
 - payments collection: store amount in pounds, currency GBP; add provider identifiers (payment_id, mandate_id) when GC is integrated.
 
 ## 4) Dashboards & UX
 
 - Member dashboard: shows role, hides "Upgrade to Member" when role === member or membership.status === active. Onboarding card uses a single "Update Details" button (password + personal/emergency/medical info). Settings now also collects Child date of birth + Address.
-- Teacher dashboard: class list + register page backed by enrollments. Teachers can mark attendance (attendedDates on enrollments). Register is weekly, pinned to the class weekday. Future weeks are view‑only (no marking).
+- Teacher dashboard: class list + register page backed by enrollments. Teachers can mark attendance (attendedDates on enrollments). Register is weekly, pinned to the class weekday. Future weeks are viewâ€‘only (no marking).
 - Admin dashboard:
   - Users: search by name/email/role; table shows Parent, Child, Email, Role, Membership, Phone. Clicking a row opens an inline modal with user, bookings and payments (via `/api/customers/[email]`).
   - Trials: update status (pending -> attended -> converted).
@@ -88,29 +88,29 @@ trialBookings schema (effective)
 - Store in users.membership:
   - gocardless_customer_id, gocardless_mandate_id, gocardless_subscription_id
   - status, optional cached enrollmentCount
-- Apply changes from next charge date (simple). For proration, create one‑off Payments.
+- Apply changes from next charge date (simple). For proration, create oneâ€‘off Payments.
 
 ## Project Status (Summary)
 
 - DB is clean of legacy test data. Normalized model is live: `children` collection + `enrollments` with `childId` (unique by `{ userId, childId, classId }`).
-- Admin → Users modal: edit profile details and per‑child enrollments (change/add/remove) with capacity display and enforcement.
-- Teacher register: weekly (locked to class weekday), mark/unmark only for current/past weeks; per‑child attendance via enrollments.
+- Admin â†’ Users modal: edit profile details and perâ€‘child enrollments (change/add/remove) with capacity display and enforcement.
+- Teacher register: weekly (locked to class weekday), mark/unmark only for current/past weeks; perâ€‘child attendance via enrollments.
 - API returns `children[]`, `enrollments[]` (with class + child), `payments[]`, and `enrollmentCount` for admin tools.
-- Authorization checks in admin/teacher endpoints are consistent; success redirect is read‑only (webhook is authoritative).
+- Authorization checks in admin/teacher endpoints are consistent; success redirect is readâ€‘only (webhook is authoritative).
 
 ## Next Steps
 
-- Add minimal Admin “Add Child” UI and per‑child views in member dashboard.
+- Add minimal Admin â€œAdd Childâ€ UI and perâ€‘child views in member dashboard.
 - Integrate GoCardless: redirect flow (mandate), create subscription with amount computed from `enrollmentCount`, and webhook processing.
-- Optional: tiered pricing rules and one‑off payment handling for mid‑cycle changes.
+- Optional: tiered pricing rules and oneâ€‘off payment handling for midâ€‘cycle changes.
 
-## 9) Migration From Stripe → GoCardless (Checklist)
+## 9) Migration From Stripe â†’ GoCardless (Checklist)
 
 Prereqs
 - GoCardless sandbox account + access token
 - Webhook endpoint URL reachable from GC (ngrok in dev)
-- Decide pricing rule (linear £30 × count, or tiered map)
-- Policy for proration (recommend: apply changes next charge date; optionally create one‑off Payments)
+- Decide pricing rule (linear Â£30 Ã— count, or tiered map)
+- Policy for proration (recommend: apply changes next charge date; optionally create oneâ€‘off Payments)
 
 Environment variables (proposed)
 - `GOCARDLESS_ACCESS_TOKEN`
@@ -127,7 +127,7 @@ Data model additions (users.membership)
 
 API changes (high level)
 - Replace `/api/checkout`:
-  - Start GC Redirect Flow → return `redirect_url`
+  - Start GC Redirect Flow â†’ return `redirect_url`
   - On return, exchange for customer/mandate and create subscription with `amount = priceFor(enrollmentCount)` and monthly interval
   - Persist GC IDs on user and write `membershipHistory`
 - Add `/api/webhook/gocardless` handler:
@@ -140,7 +140,7 @@ Enrollment-driven updates
 - After any enrollment add/remove:
   - Recompute active `enrollmentCount`
   - Compute new amount and update GC subscription amount (effective next collection)
-  - Optionally create one‑off Payment for proration
+  - Optionally create oneâ€‘off Payment for proration
   - Store cached `membership.enrollmentCount`
 
 UI notes
@@ -152,10 +152,11 @@ Cutover steps
 2) Implement redirect flow + subscription creation in sandbox
 3) Switch `/api/checkout` to GC path; keep Stripe path disabled
 4) Update README billing notes and ops runbook
-5) QA: mandate created → subscription created → payment confirmed webhook → payments row written → membership active
-6) Optional migration: keep Stripe payments as read‑only history; do not mix providers for the same user
+5) QA: mandate created â†’ subscription created â†’ payment confirmed webhook â†’ payments row written â†’ membership active
+6) Optional migration: keep Stripe payments as readâ€‘only history; do not mix providers for the same user
 
 Ops/failure handling
-- Mandate failure or bank details changed → pause membership and notify admin
-- Payment failure → keep membership pending and surface in admin payments
+- Mandate failure or bank details changed â†’ pause membership and notify admin
+- Payment failure â†’ keep membership pending and surface in admin payments
 - Retries: GC will retry; webhook handler must be idempotent
+

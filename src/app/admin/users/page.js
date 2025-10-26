@@ -28,6 +28,7 @@ export default function AdminUsersPage() {
     medical: "",
   });
   const [savingChild, setSavingChild] = useState(false);
+  const [editChildId, setEditChildId] = useState("");
 
   // Preselect the only child for enrollment when exactly one exists
   useEffect(() => {
@@ -895,6 +896,85 @@ export default function AdminUsersPage() {
                           </div>
                         </div>
 
+                        {/* Manage existing children (edit/delete) */}
+                        <div className="mt-4">
+                          <div className="text-gray-500 text-sm">Manage Children</div>
+                          {Array.isArray(detail.children) && detail.children.length > 0 ? (
+                            <div className="flex flex-col gap-2 mt-1">
+                              <div className="flex items-center gap-2">
+                                <select
+                                  className="border rounded px-2 py-1 text-sm"
+                                  value={editChildId}
+                                  onChange={(e)=> setEditChildId(e.target.value)}
+                                >
+                                  <option value="">Select child…</option>
+                                  {detail.children.map((c)=> (
+                                    <option key={c._id} value={c._id}>
+                                      {[c.firstName, c.lastName].filter(Boolean).join(" ")}
+                                    </option>
+                                  ))}
+                                </select>
+                                <button
+                                  className="text-sm bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded border"
+                                  onClick={()=>{
+                                    const id = editChildId || (detail.children[0]?._id || "");
+                                    if(!id) return;
+                                    const c = detail.children.find(x=> String(x._id)===String(id));
+                                    if(!c) return;
+                                    setEditMode(true);
+                                    setNewChild({
+                                      firstName: c.firstName||"",
+                                      lastName: c.lastName||"",
+                                      dob: c.dob ? String(c.dob).slice(0,10) : "",
+                                      medical: c.medical || "",
+                                    });
+                                  }}
+                                >Load into form</button>
+                                <button
+                                  className="text-sm bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 rounded"
+                                  onClick={async()=>{
+                                    const id = editChildId || (detail.children[0]?._id || "");
+                                    if(!id) return;
+                                    try{
+                                      setSavingChild(true);
+                                      const res = await fetch(`/api/children/${id}`,{
+                                        method:'PUT',
+                                        headers:{'Content-Type':'application/json'},
+                                        body: JSON.stringify({ firstName:newChild.firstName, lastName:newChild.lastName, dob:newChild.dob, medical:newChild.medical })
+                                      });
+                                      const d = await res.json().catch(()=>({}));
+                                      if(!res.ok) throw new Error(d.error||'Failed to update child');
+                                      await openUserDetails(detail.user.email);
+                                    }catch(e){ alert(e.message||String(e)); }
+                                    finally{ setSavingChild(false); }
+                                  }}
+                                  disabled={!editChildId && !(detail.children[0]?._id)}
+                                >Save Child</button>
+                                <button
+                                  className="text-sm bg-red-600 hover:bg-red-700 text-white px-2 py-1 rounded"
+                                  onClick={async()=>{
+                                    const id = editChildId || (detail.children[0]?._id || "");
+                                    if(!id) return;
+                                    const hasEnr = (detail.enrollments||[]).some(e=> String(e.childId)===String(id));
+                                    if(hasEnr){ alert('Cannot delete: child has enrollments. Remove them first.'); return; }
+                                    if(!confirm('Delete this child?')) return;
+                                    try{
+                                      const res = await fetch(`/api/children/${id}`,{ method:'DELETE' });
+                                      const d = await res.json().catch(()=>({}));
+                                      if(!res.ok) throw new Error(d.error||'Failed to delete child');
+                                      setEditChildId("");
+                                      await openUserDetails(detail.user.email);
+                                    }catch(e){ alert(e.message||String(e)); }
+                                  }}
+                                  disabled={!editChildId && !(detail.children[0]?._id)}
+                                >Delete Child</button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="text-sm text-gray-500">No children yet.</div>
+                          )}
+                        </div>
+
                       {Array.isArray(detail.children) && detail.children.length > 1 && (
                         <>
                           {(detail.children || []).map((child) => {
@@ -1256,6 +1336,9 @@ export default function AdminUsersPage() {
     </DashboardLayout>
   );
 }
+
+
+
 
 
 
