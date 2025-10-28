@@ -81,6 +81,16 @@ export async function PATCH(req: Request) {
       }
 
       // Ensure a child document exists for this user
+      const userDocForChild = await db.collection("users").findOne({ _id: userId }, { projection: { child: 1, medical: 1 } });
+      const parseDob = (val: any): Date | null => {
+        if (!val) return null;
+        const d = new Date(val);
+        return isNaN(d.getTime()) ? null : d;
+      };
+      const dobFromUser = parseDob((userDocForChild as any)?.child?.dob);
+      const dobFromTrial = parseDob((trial as any)?.child?.dob || (trial as any)?.childDob || (trial as any)?.dob);
+      const dobToUse = dobFromUser || dobFromTrial || null;
+
       const existingChild = await db.collection("children").findOne({
         userId,
         firstName: childFirstName,
@@ -92,14 +102,21 @@ export async function PATCH(req: Request) {
           userId,
           firstName: childFirstName,
           lastName: childLastName,
-          dob: null,
-          medical: "",
+          dob: dobToUse ? (dobToUse as Date).toISOString() : null,
+          medical: (userDocForChild as any)?.medical || "",
           createdAt: new Date(),
           updatedAt: new Date(),
         });
         childId = insChild.insertedId as ObjectId;
       } else {
         childId = existingChild._id as ObjectId;
+        // Backfill DOB if missing and we have one
+        if (!(existingChild as any).dob && dobToUse) {
+          await db.collection("children").updateOne(
+            { _id: childId },
+            { $set: { dob: (dobToUse as Date).toISOString(), updatedAt: new Date() } }
+          );
+        }
       }
 
       // Set primaryChildId if absent

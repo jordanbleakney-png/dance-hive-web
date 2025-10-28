@@ -14,6 +14,14 @@ export async function PATCH(req: Request) {
     // Optional basic fields we already supported
     if (typeof body.name === "string") allowed["name"] = body.name;
     if (typeof body.parentPhone === "string") allowed["parentPhone"] = body.parentPhone;
+    // Preferred fields mapped to what dashboard displays
+    if (typeof body.phone === "string") allowed["phone"] = body.phone;
+    if (body.parent && typeof body.parent === "object") {
+      allowed["parent"] = {
+        firstName: String(body.parent.firstName || ""),
+        lastName: String(body.parent.lastName || ""),
+      };
+    }
     if (typeof body.medical === "string") allowed["medical"] = body.medical;
     if (body.emergencyContact && typeof body.emergencyContact === "object") {
       allowed["emergencyContact"] = {

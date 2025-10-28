@@ -8,6 +8,10 @@ export default function SettingsPage() {
   const [pwState, setPwState] = useState({ currentPassword: "", newPassword: "", confirmPassword: "" });
   const [pwMsg, setPwMsg] = useState<string | null>(null);
   const [profile, setProfile] = useState({
+    // parent details
+    parentFirstName: "",
+    parentLastName: "",
+    phone: "",
     // child details
     childDob: "",
     emergencyName: "",
@@ -22,6 +26,7 @@ export default function SettingsPage() {
     postcode: "",
   });
   const [profileMsg, setProfileMsg] = useState<string | null>(null);
+  const [childrenForms, setChildrenForms] = useState<any[]>([]);
   // Prefill from current account overview
   useEffect(() => {
     (async () => {
@@ -57,6 +62,9 @@ export default function SettingsPage() {
 
         setProfile((p) => ({
           ...p,
+          parentFirstName: data?.parent?.firstName || p.parentFirstName,
+          parentLastName: data?.parent?.lastName || p.parentLastName,
+          phone: data?.phone || p.phone,
           childDob: toYMD(data?.child?.dob),
           emergencyName: data?.emergencyContact?.name || p.emergencyName,
           emergencyPhone: data?.emergencyContact?.phone || p.emergencyPhone,
@@ -68,6 +76,18 @@ export default function SettingsPage() {
           county: county || p.county,
           postcode: postcode || p.postcode,
         }));
+
+        // Build children edit forms (for own children)
+        const childrenArr = Array.isArray(data?.children) ? data.children : [];
+        setChildrenForms(childrenArr.map((c: any) => ({
+          _id: c._id,
+          firstName: c.firstName || "",
+          lastName: c.lastName || "",
+          dob: toYMD(c.dob),
+          medical: c.medical || "",
+          saving: false,
+          msg: "",
+        })));
       } catch {}
     })();
   }, []);
@@ -102,13 +122,13 @@ export default function SettingsPage() {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          childDob: profile.childDob || undefined,
+          parent: { firstName: profile.parentFirstName, lastName: profile.parentLastName },
+          phone: profile.phone,
           emergencyContact: {
             name: profile.emergencyName,
             phone: profile.emergencyPhone,
             relation: profile.emergencyRelation,
           },
-          medical: profile.medical,
           address: {
             houseNumber: profile.houseNumber,
             street: profile.street,
@@ -123,6 +143,28 @@ export default function SettingsPage() {
       setProfileMsg("Details saved.");
     } catch (err: any) {
       setProfileMsg(err.message);
+    }
+  };
+
+  const setChildField = (id: string, key: string, value: any) => {
+    setChildrenForms((prev) => prev.map((c) => (String(c._id) === String(id) ? { ...c, [key]: value } : c)));
+  };
+
+  const saveChild = async (id: string) => {
+    setChildrenForms((prev) => prev.map((c) => (String(c._id) === String(id) ? { ...c, saving: true, msg: "" } : c)));
+    const c = childrenForms.find((x) => String(x._id) === String(id));
+    if (!c) return;
+    try {
+      const res = await fetch(`/api/children/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ firstName: c.firstName, lastName: c.lastName, dob: c.dob, medical: c.medical })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to save');
+      setChildrenForms((prev) => prev.map((x) => (String(x._id) === String(id) ? { ...x, saving: false, msg: 'Saved.' } : x)));
+    } catch (err: any) {
+      setChildrenForms((prev) => prev.map((x) => (String(x._id) === String(id) ? { ...x, saving: false, msg: err.message || 'Failed.' } : x)));
     }
   };
 
@@ -145,21 +187,18 @@ export default function SettingsPage() {
           {pwMsg && <p className="mt-3 text-sm text-gray-700">{pwMsg}</p>}
         </section>
 
-        {/* Child Details */}
+        {/* Parent Details */}
         <section className="bg-white rounded-xl shadow p-6 mb-8">
-          <h2 className="text-xl font-semibold mb-4">Child Details</h2>
+          <h2 className="text-xl font-semibold mb-4">Parent Details</h2>
           <form onSubmit={submitProfile} className="space-y-3">
-            {/* 1. Child date of birth */}
-            <div>
-              <label className="block text-sm text-gray-600 mb-1">Date of birth</label>
-              <input className="w-full border rounded-md p-2 max-w-sm" type="date" value={profile.childDob} onChange={(e) => setProfile({ ...profile, childDob: e.target.value })} />
+            {/* Parent name + phone */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <input className="border rounded-md p-2" type="text" placeholder="Parent first name" value={profile.parentFirstName} onChange={(e) => setProfile({ ...profile, parentFirstName: e.target.value })} />
+              <input className="border rounded-md p-2" type="text" placeholder="Parent last name" value={profile.parentLastName} onChange={(e) => setProfile({ ...profile, parentLastName: e.target.value })} />
+              <input className="border rounded-md p-2" type="tel" placeholder="Phone" value={profile.phone} onChange={(e) => setProfile({ ...profile, phone: e.target.value })} />
             </div>
 
-            {/* 2. Medical information */}
-            <div>
-              <label className="block text-sm text-gray-600 mb-1">Medical information</label>
-              <textarea className="w-full border rounded-md p-2" rows={4} value={profile.medical} onChange={(e) => setProfile({ ...profile, medical: e.target.value })} />
-            </div>
+            {/* Child details removed here; editable per child below */}
 
             {/* 3-5. Emergency contact fields */}
             <label className="block text-sm text-gray-600 mb-1">Emergency contact details</label>
@@ -185,6 +224,28 @@ export default function SettingsPage() {
           </form>
           {profileMsg && <p className="mt-3 text-sm text-gray-700">{profileMsg}</p>}
         </section>
+
+        {/* Children (each child editable) */}
+        {childrenForms.length > 0 && (
+          <section className="bg-white rounded-xl shadow p-6 mb-8">
+            <h2 className="text-xl font-semibold mb-4">Children</h2>
+            <div className="space-y-6">
+              {childrenForms.map((c) => (
+                <div key={String(c._id)} className="border rounded-lg p-4">
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-3">
+                    <input className="border rounded-md p-2" type="text" placeholder="First name" value={c.firstName} onChange={(e) => setChildField(c._id, 'firstName', e.target.value)} />
+                    <input className="border rounded-md p-2" type="text" placeholder="Last name" value={c.lastName} onChange={(e) => setChildField(c._id, 'lastName', e.target.value)} />
+                    <input className="border rounded-md p-2" type="date" value={c.dob} onChange={(e) => setChildField(c._id, 'dob', e.target.value)} />
+                    <button type="button" className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md" disabled={c.saving} onClick={() => saveChild(c._id)}>{c.saving ? 'Saving...' : 'Save'}</button>
+                  </div>
+                  <label className="block text-sm text-gray-600 mb-1">Medical information</label>
+                  <textarea className="w-full border rounded-md p-2" rows={3} value={c.medical} onChange={(e) => setChildField(c._id, 'medical', e.target.value)} />
+                  {c.msg && <div className="text-sm text-gray-600 mt-1">{c.msg}</div>}
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
       </div>
     </DashboardLayout>
   );

@@ -52,10 +52,10 @@ export default function DashboardPage() {
   }
 
   const childName = overview
-    ? [overview.child?.firstName, overview.child?.lastName].filter(Boolean).join(" | ")
+    ? [overview.child?.firstName, overview.child?.lastName].filter(Boolean).join(" ")
     : "";
   const parentName = overview
-    ? [overview.parent?.firstName, overview.parent?.lastName].filter(Boolean).join(" | ")
+    ? [overview.parent?.firstName, overview.parent?.lastName].filter(Boolean).join(" ")
     : "";
   const addressLine = overview
     ? [
@@ -98,14 +98,6 @@ export default function DashboardPage() {
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
             <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full mx-4 p-6 text-center">
               <h2 className="font-bold text-xl mb-3">You made it, {session?.user?.name || "there"}!</h2>
-              <p className="text-gray-700 mb-4 hidden">
-                Your trial class was just the beginning — we'd love for you to stay with us!<br />
-                Get ready to become an official member of the Hive.
-              </p>
-              <p className="text-gray-700 mb-4 hidden">
-                Your trial class was just the beginning — we'd love for you to stay with us!<br />
-                Get ready to become an official member of the Hive.
-              </p>
               <p className="text-gray-700 mb-4">
                 Your trial class was just the beginning &mdash; we'd love for you to stay with us!<br />
                 Get ready to become an official member of the Hive.
@@ -135,34 +127,55 @@ export default function DashboardPage() {
         {overview && (
           <div className="max-w-3xl mx-auto bg-white rounded-xl shadow p-6 text-left mb-6">
             <div className="flex items-center justify-between mb-3">
-              <h2 className="text-lg font-semibold">Parent Details</h2>
+              <h2 className="text-lg font-semibold">{(overview?.parent?.firstName || 'Parent') + ' Details'}</h2>
+              <a
+                href="/dashboard/settings"
+                title="Edit details"
+                aria-label="Edit details"
+                className="inline-flex items-center text-blue-600 hover:text-blue-700"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  fill="currentColor"
+                  className="w-5 h-5"
+                >
+                  <path d="M16.862 3.487a1.75 1.75 0 0 1 2.476 2.476l-10.3 10.3a3 3 0 0 1-1.272.754l-3.086.882a.75.75 0 0 1-.923-.923l.882-3.086a3 3 0 0 1 .754-1.272l10.3-10.3Z" />
+                  <path d="M5.25 19.5h13.5a.75.75 0 0 1 0 1.5H5.25a.75.75 0 0 1 0-1.5Z"/>
+                </svg>
+                <span className="sr-only">Edit</span>
+              </a>
             </div>
-            <div className="grid md:grid-cols-3 gap-x-4 gap-y-2 text-sm">
-              <div>
-                <div className="text-gray-500">Parent name</div>
-                <div className="font-medium">{parentName || "-"}</div>
+            <div className="grid md:grid-cols-2 gap-x-8 gap-y-4 text-sm">
+              <div className="space-y-3">
+                <div>
+                  <div className="text-gray-500">Parent name</div>
+                  <div className="font-medium">{parentName || "-"}</div>
+                </div>
+                <div>
+                  <div className="text-gray-500">Address details</div>
+                  <div className="font-medium whitespace-pre-line">{addressLines.length ? addressLines.join('\n') : "-"}</div>
+                </div>
               </div>
-              <div>
-                <div className="text-gray-500">Phone</div>
-                <div className="font-medium">{overview.phone || "-"}</div>
-              </div>
-              <div>
-                <div className="text-gray-500">Email</div>
-                <div className="font-medium">{overview.email || "-"}</div>
-              </div>
-              <div className="md:col-start-3">
-                <div className="text-gray-500">Emergency contact details</div>
-                <div className="font-medium">{[
-                  overview.emergencyContact?.name,
-                  overview.emergencyContact?.phone,
-                  overview.emergencyContact?.relation,
-                ]
-                  .filter(Boolean)
-                  .join(" | ") || "Not provided"}</div>
-              </div>
-              <div className="md:col-span-3">
-                <div className="text-gray-500">Address details</div>
-                <div className="font-medium whitespace-pre-line">{addressLines.length ? addressLines.join('\n') : "-"}</div>
+              <div className="space-y-3">
+                <div>
+                  <div className="text-gray-500">Phone</div>
+                  <div className="font-medium">{overview.phone || "-"}</div>
+                </div>
+                <div>
+                  <div className="text-gray-500">Email</div>
+                  <div className="font-medium break-words">{overview.email || "-"}</div>
+                </div>
+                <div>
+                  <div className="text-gray-500">Emergency contact details</div>
+                  <div className="font-medium">{[
+                    overview.emergencyContact?.name,
+                    overview.emergencyContact?.phone,
+                    overview.emergencyContact?.relation,
+                  ]
+                    .filter(Boolean)
+                    .join(" | ") || "Not provided"}</div>
+                </div>
               </div>
             </div>
           </div>
@@ -173,8 +186,7 @@ export default function DashboardPage() {
           overview.children.map((ch, idx) => (
             <div key={idx} className="max-w-3xl mx-auto bg-white rounded-xl shadow p-6 text-left mb-6">
               <div className="flex items-center justify-between mb-3">
-                <h2 className="text-lg font-semibold">Child Details</h2>
-                <a href="/dashboard/settings" className="text-sm text-blue-600 hover:underline">Edit</a>
+                <h2 className="text-lg font-semibold">{(ch?.firstName || 'Child') + ' Details'}</h2>
               </div>
               <div className="grid md:grid-cols-3 gap-4 text-sm">
                 <div>
@@ -232,8 +244,7 @@ export default function DashboardPage() {
         {overview && (!Array.isArray(overview.children) || overview.children.length === 0) && (
           <div className="max-w-3xl mx-auto bg-white rounded-xl shadow p-6 text-left mb-6">
             <div className="flex items-center justify-between mb-3">
-              <h2 className="text-lg font-semibold">Child Details</h2>
-              <a href="/dashboard/settings" className="text-sm text-blue-600 hover:underline">Edit</a>
+              <h2 className="text-lg font-semibold">{(overview?.child?.firstName || 'Child') + ' Details'}</h2>
             </div>
             <div className="grid md:grid-cols-3 gap-4 text-sm">
               <div>

@@ -7,7 +7,7 @@ import { ObjectId } from "mongodb";
 export async function PUT(req, { params }) {
   try {
     const session = await auth();
-    if (!session?.user?.role || session.user.role !== "admin") {
+    if (!session?.user?.email) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
     }
 
@@ -30,10 +30,19 @@ export async function PUT(req, { params }) {
     }
 
     const db = await getDb();
-    const res = await db.collection("children").updateOne({ _id }, { $set: { ...set, updatedAt: new Date() } });
-    if (!res.matchedCount) return new Response(JSON.stringify({ error: "Child not found" }), { status: 404 });
+    // Authorization: allow admins or the owning user to edit
     const child = await db.collection("children").findOne({ _id });
-    return new Response(JSON.stringify({ child }), { status: 200, headers: { "Content-Type": "application/json" } });
+    if (!child) return new Response(JSON.stringify({ error: "Child not found" }), { status: 404 });
+    const user = await db.collection("users").findOne({ email: session.user.email }, { projection: { _id: 1, role: 1 } });
+    const isAdmin = session.user.role === "admin" || user?.role === "admin";
+    const ownsChild = user?._id && String(child.userId) === String(user._id);
+    if (!isAdmin && !ownsChild) {
+      return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 });
+    }
+
+    await db.collection("children").updateOne({ _id }, { $set: { ...set, updatedAt: new Date() } });
+    const updated = await db.collection("children").findOne({ _id });
+    return new Response(JSON.stringify({ child: updated }), { status: 200, headers: { "Content-Type": "application/json" } });
   } catch (err) {
     console.error("[children/:id] PUT error:", err);
     return new Response(JSON.stringify({ error: "Internal Server Error" }), { status: 500 });
@@ -75,4 +84,3 @@ export async function DELETE(req, { params }) {
     return new Response(JSON.stringify({ error: "Internal Server Error" }), { status: 500 });
   }
 }
-
