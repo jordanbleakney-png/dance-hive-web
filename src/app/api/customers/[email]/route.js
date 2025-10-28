@@ -27,6 +27,16 @@ export async function GET(_req, context) {
     const payments = await db.collection("payments").find({ email: ci }).toArray();
     const children = await db.collection("children").find({ userId: user._id }).toArray();
 
+    // Heal legacy enrollments lacking childId when exactly one child exists
+    try {
+      if (Array.isArray(children) && children.length === 1) {
+        await db.collection("enrollments").updateMany(
+          { userId: user._id, $or: [{ childId: { $exists: false } }, { childId: null }] },
+          { $set: { childId: children[0]._id } }
+        );
+      }
+    } catch {}
+
     // Enrollments for this user with class + child details
     const enrollments = await db
       .collection("enrollments")

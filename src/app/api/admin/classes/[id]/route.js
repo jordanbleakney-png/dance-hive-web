@@ -23,56 +23,57 @@ export async function GET(_, context) {
     return new Response(JSON.stringify({ error: "Class not found" }), { status: 404 });
   }
 
-  // Load enrollments for this class
-  const enrollments = await db.collection("enrollments").find({ classId: classObjectId }).toArray();
-  const userIds = enrollments.map((e) => e.userId);
+  // Join enrollments with users and children so each row shows the correct child
+  const pipeline = [
+    { $match: { classId: classObjectId } },
+    { $lookup: { from: "users", localField: "userId", foreignField: "_id", as: "user" } },
+    { $unwind: "$user" },
+    { $lookup: { from: "children", localField: "childId", foreignField: "_id", as: "child" } },
+    { $unwind: { path: "$child", preserveNullAndEmptyArrays: true } },
+    { $project: {
+        _id: 1,
+        email: "$user.email",
+        parentName: { $trim: { input: { $concat: [ { $ifNull: ["$user.parent.firstName", ""] }, " ", { $ifNull: ["$user.parent.lastName", ""] } ] } } },
+        parentPhone: { $ifNull: ["$user.phone", ""] },
+        childFirst: { $ifNull: ["$child.firstName", "$user.child.firstName"] },
+        childLast: { $ifNull: ["$child.lastName", "$user.child.lastName"] },
+        childAge: "$user.age",
+        membership: "$user.membership",
+      } },
+  ];
 
-  // Load users for enrollments
-  const users = await db
-    .collection("users")
-    .find({ _id: { $in: userIds } })
-    .project({ email: 1, name: 1, phone: 1, parent: 1, child: 1, childName: 1, studentName: 1, age: 1, membership: 1 })
-    .toArray();
-  const userById = new Map(users.map((u) => [String(u._id), u]));
+  const joined = await db.collection("enrollments").aggregate(pipeline).toArray();
 
-  // For users missing child details, try to backfill from latest trial for this class
   const idString = String(classObjectId);
   const students = [];
-  for (const e of enrollments) {
-    const u = userById.get(String(e.userId));
-    if (!u) continue;
-    let childName = (u.child && `${u.child.firstName || ""} ${u.child.lastName || ""}`.trim()) || u.childName || u.studentName || "";
-    let childAge = u.age || null;
-    if (!childName || childAge == null) {
+  for (const row of joined) {
+    let childName = [row.childFirst, row.childLast].filter(Boolean).join(" ");
+    let childAge = row.childAge ?? null;
+    if (!childName) {
       const trial = await db
         .collection("trialBookings")
-        .find({ email: u.email, classId: idString })
+        .find({ email: row.email, classId: idString })
         .sort({ createdAt: -1 })
         .limit(1)
         .toArray();
       if (trial[0]) {
-        childName = childName || trial[0].childName || "";
+        childName = trial[0].childName || childName;
         if (childAge == null) {
           const tAge = Number(trial[0].childAge);
           childAge = Number.isFinite(tAge) ? tAge : null;
         }
       }
     }
-    const parentName = (u.parent && `${u.parent.firstName || ""} ${u.parent.lastName || ""}`.trim()) || u.name || "";
-
     students.push({
-      _id: u._id,
-      email: u.email,
-      parentName,
-      parentPhone: u.phone || "",
+      _id: row._id,
+      email: row.email,
+      parentName: row.parentName || row.email,
+      parentPhone: row.parentPhone || "",
       childName,
       childAge,
-      membership: u.membership,
+      membership: row.membership,
     });
   }
 
   return new Response(JSON.stringify({ classInfo, students }), { status: 200 });
 }
-
-
-

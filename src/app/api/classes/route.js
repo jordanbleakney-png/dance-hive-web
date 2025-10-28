@@ -1,12 +1,23 @@
 ﻿import { auth } from "@/app/api/auth/[...nextauth]/route";
 import { ObjectId } from "mongodb";
 import { getDb } from "@/lib/dbConnect";
+import { NextResponse } from "next/server";
 
 // Public: list classes
 export async function GET() {
   const db = await getDb();
-  const classes = await db.collection("classes").find().toArray();
-  return new Response(JSON.stringify(classes), { status: 200 });
+  const raw = await db
+    .collection("classes")
+    .find({}, { projection: { name: 1, day: 1, time: 1, instructor: 1 } })
+    .toArray();
+  const classes = raw.map((c) => ({
+    _id: c._id?.toString?.() || String(c._id),
+    name: c.name || "",
+    day: c.day || "",
+    time: c.time || "",
+    instructor: c.instructor || "",
+  }));
+  return NextResponse.json(classes, { status: 200 });
 }
 
 // Admin: create class

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
+import toast from "react-hot-toast";
 
 export default function AdminUsersPage() {
   const [query, setQuery] = useState("");
@@ -29,6 +30,95 @@ export default function AdminUsersPage() {
   });
   const [savingChild, setSavingChild] = useState(false);
   const [editChildId, setEditChildId] = useState("");
+  const [addChildOpen, setAddChildOpen] = useState(false);
+
+  // Per-child inline edit state
+  const [childForms, setChildForms] = useState({}); // { [id]: { firstName,lastName,dob,medical } }
+  const [childSaving, setChildSaving] = useState({}); // { [id]: boolean }
+
+  function startChildEdit(child) {
+    const id = String(child?._id || "");
+    if (!id) return;
+    setEditChildId(id);
+    setChildForms((p) => ({
+      ...p,
+      [id]: {
+        firstName: child.firstName || "",
+        lastName: child.lastName || "",
+        dob: child.dob ? new Date(child.dob).toISOString().slice(0, 10) : "",
+        medical: child.medical || "",
+      },
+    }));
+  }
+
+  function cancelChildEdit() {
+    setEditChildId("");
+  }
+
+  function setChildField(id, field, value) {
+    setChildForms((p) => ({ ...p, [String(id)]: { ...(p[String(id)] || {}), [field]: value } }));
+  }
+
+  async function saveChildEdit(id) {
+    const key = String(id);
+    const form = childForms[key] || {};
+    if (!form.firstName) return;
+    try {
+      setChildSaving((p) => ({ ...p, [key]: true }));
+      const res = await fetch(`/api/children/${key}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          firstName: form.firstName,
+          lastName: form.lastName,
+          dob: form.dob || null,
+          medical: form.medical,
+        }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error || "Failed to update child");
+      toast.success("Child details saved");
+      setEditChildId("");
+      await openUserDetails(detail.user.email);
+    } catch (e) {
+      toast.error(e.message || String(e));
+    } finally {
+      setChildSaving((p) => ({ ...p, [key]: false }));
+    }
+  }
+
+  async function deleteChildById(id) {
+    const key = String(id || "");
+    if (!key) return;
+    const enrollmentsForChild = (detail?.enrollments || []).filter(
+      (e) => String(e.childId) === key
+    );
+    const needsCascade = enrollmentsForChild.length > 0;
+    const ok = confirm(
+      needsCascade
+        ? "This child has enrollments. Remove them and delete the child?"
+        : "Delete this child?"
+    );
+    if (!ok) return;
+    try {
+      setChildSaving((p) => ({ ...p, [key]: true }));
+      const url = needsCascade
+        ? `/api/children/${key}?force=true`
+        : `/api/children/${key}`;
+      const res = await fetch(url, { method: "DELETE" });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error || "Failed to delete child");
+      toast.success("Child deleted");
+      setEditChildId("");
+      await openUserDetails(detail.user.email);
+    } catch (e) {
+      toast.error(e.message || String(e));
+    } finally {
+      setChildSaving((p) => ({ ...p, [key]: false }));
+    }
+  }
+
+  // No per-child detail editor here; Manage Children handles child fields
 
   // Preselect the only child for enrollment when exactly one exists
   useEffect(() => {
@@ -177,19 +267,19 @@ export default function AdminUsersPage() {
     }
   }
 
-  async function addEnrollment() {
-    // Resolve childId: if exactly one child and none selected (picker hidden), use that
-    let childIdToUse = addChildId;
-    if (
-      !childIdToUse &&
-      Array.isArray(detail?.children) &&
-      detail.children.length === 1
-    ) {
+  async function addEnrollment(childIdOverride, classIdOverride) {
+    // Allow direct args to avoid setState timing issues
+    let childIdToUse = childIdOverride || addChildId;
+    let classIdToUse = classIdOverride || addClassId;
+
+    // Resolve childId if exactly one child and none selected
+    if (!childIdToUse && Array.isArray(detail?.children) && detail.children.length === 1) {
       childIdToUse = String(detail.children[0]?._id || "");
       setAddChildId(childIdToUse);
     }
-    if (!detail?.user?._id || !addClassId || !childIdToUse) return;
-    // Client-side guard: avoid duplicates
+
+    if (!detail?.user?._id || !classIdToUse || !childIdToUse) return;
+    // Client-side guard: avoid duplicates (best-effort; server is authoritative)
     if (
       (uniqueEnrollments || []).some(
         (e) =>
@@ -206,7 +296,7 @@ export default function AdminUsersPage() {
         body: JSON.stringify({
           userId: detail.user._id,
           childId: childIdToUse,
-          classId: addClassId,
+          classId: classIdToUse,
         }),
       });
       const d = await res.json().catch(() => ({}));
@@ -396,9 +486,10 @@ export default function AdminUsersPage() {
                 onClick={() => setDetailOpen(false)}
               >
                 <div
-                  className="bg-white rounded-xl shadow-xl max-w-3xl w-full p-6 text-left"
+                  className="bg-white rounded-xl shadow-xl max-w-3xl w-full text-left overflow-hidden"
                   onClick={(e) => e.stopPropagation()}
                 >
+                  <div className="p-6 max-h-[85vh] overflow-y-auto hide-scrollbar">
                   <div className="flex items-center justify-between mb-4">
                     <h2 className="text-lg font-semibold">User Details</h2>
                     <div className="flex items-center gap-3">
@@ -432,8 +523,8 @@ export default function AdminUsersPage() {
                       >
                         Close
                       </button>
-                    </div>
                   </div>
+                </div>
 
                   {detailLoading && <p>Loading...</p>}
                   {!detailLoading && detail?.error && (
@@ -546,70 +637,23 @@ export default function AdminUsersPage() {
                                       </div>
                                     </div>
 
-                                    <div>
-                                      <div className="text-gray-500 text-sm">
-                                        Child | Age
-                                      </div>
-                                      <div className="font-medium">
-                                        {editMode ? (
-                                          <div className="grid grid-cols-2 gap-2 text-sm">
-                                            <input
-                                              className="border rounded p-1 w-full text-sm"
-                                              placeholder="First name"
-                                              value={
-                                                form?.child?.firstName || ""
-                                              }
-                                              onChange={(e) =>
-                                                updateField(
-                                                  "child.firstName",
-                                                  e.target.value
-                                                )
-                                              }
-                                            />
-                                            <input
-                                              className="border rounded p-1 w-full text-sm"
-                                              placeholder="Last name"
-                                              value={
-                                                form?.child?.lastName || ""
-                                              }
-                                              onChange={(e) =>
-                                                updateField(
-                                                  "child.lastName",
-                                                  e.target.value
-                                                )
-                                              }
-                                            />
-                                            <input
-                                              className="border rounded p-1 w-full col-span-2 text-sm"
-                                              type="date"
-                                              value={form?.child?.dob || ""}
-                                              onChange={(e) =>
-                                                updateField(
-                                                  "child.dob",
-                                                  e.target.value
-                                                )
-                                              }
-                                            />
+                                    {/* Children from children collection with age + medical */}
+                                    {(Array.isArray(detail?.children) ? detail.children : []).map((c, idx) => {
+                                      const nm = [c?.firstName, c?.lastName].filter(Boolean).join(" ");
+                                      const ag = yearsFromDob(c?.dob);
+                                      return (
+                                        <>
+                                          <div key={`child-${idx}-heading`}>
+                                            <div className="text-gray-500 text-sm">Child | Age</div>
+                                            <div className="font-medium">{[nm || "-", ag != null ? String(ag) : null].filter(Boolean).join(" | ")}</div>
                                           </div>
-                                        ) : (
-                                          <div className="space-y-0.5">
-                                            <div>
-                                              {childName || "-"}
-                                              {derivedAge != null ? (
-                                                <span>
-                                                  {childName
-                                                    ? ` | ${derivedAge}`
-                                                    : ` ${derivedAge}`}
-                                                </span>
-                                              ) : null}
-                                            </div>
-                                            {extraLines.map((t, idx) => (
-                                              <div key={idx}>{t}</div>
-                                            ))}
+                                          <div key={`child-${idx}-medical`}>
+                                            <div className="text-gray-500 text-sm">Medical Details</div>
+                                            <div className="font-medium whitespace-pre-wrap">{c?.medical || "-"}</div>
                                           </div>
-                                        )}
-                                      </div>
-                                    </div>
+                                        </>
+                                      );
+                                    })}
 
                                     <div>
                                       <div className="text-gray-500 text-sm">
@@ -642,34 +686,7 @@ export default function AdminUsersPage() {
                                       </div>
                                     </div>
 
-                                    <div>
-                                      <div className="text-gray-500 text-sm">
-                                        Role
-                                      </div>
-                                      <div className="font-medium">
-                                        {detail.user?.role || "customer"}
-                                      </div>
-                                    </div>
-
-                                    <div>
-                                      <div className="text-gray-500 text-sm">
-                                        Membership
-                                      </div>
-                                      <div className="font-medium">
-                                        {detail.user?.membership?.status ||
-                                          "none"}
-                                      </div>
-                                    </div>
-                                    <div>
-                                      <div className="text-gray-500 text-sm">
-                                        Classes
-                                      </div>
-                                      <div className="font-medium">
-                                        {Array.isArray(detail?.enrollments)
-                                          ? detail.enrollments.length
-                                          : detail?.enrollmentCount ?? 0}
-                                      </div>
-                                    </div>
+                                    {/* Role/Membership/Classes moved to right column to match layout */}
                                   </>
                                 );
                               })()}
@@ -813,90 +830,26 @@ export default function AdminUsersPage() {
                                 )}
                               </div>
                               <div>
-                                <div className="text-gray-500 text-sm">
-                                  Medical Details
-                                </div>
-                                {editMode ? (
-                                  <textarea
-                                    className="border rounded p-2 w-full text-sm"
-                                    rows={3}
-                                    value={form?.medical || ""}
-                                    onChange={(e) =>
-                                      updateField("medical", e.target.value)
-                                    }
-                                  />
-                                ) : (
-                                  <div className="font-medium whitespace-pre-wrap text-sm">
-                                    {detail.user?.medical || "-"}
-                                  </div>
-                                )}
+                                <div className="text-gray-500 text-sm">Role</div>
+                                <div className="font-medium">{detail.user?.role || "customer"}</div>
                               </div>
 
-{/* NEW: Add Child entry */}
                               <div>
-                                <div className="text-gray-500 text-sm">Add Child</div>
-                                {editMode ? (
-                                  <>
-                                    <div className="grid grid-cols-2 gap-2 text-sm">
-                                      <input
-                                        className="border rounded p-1 w-full"
-                                        placeholder="First name"
-                                        value={newChild.firstName}
-                                        onChange={(e) =>
-                                          setNewChild((p) => ({ ...p, firstName: e.target.value }))
-                                        }
-                                      />
-                                      <input
-                                        className="border rounded p-1 w-full"
-                                        placeholder="Last name"
-                                        value={newChild.lastName}
-                                        onChange={(e) =>
-                                          setNewChild((p) => ({ ...p, lastName: e.target.value }))
-                                        }
-                                      />
-                                      <input
-                                        type="date"
-                                        className="border rounded p-1 w-full col-span-2"
-                                        value={newChild.dob}
-                                        onChange={(e) =>
-                                          setNewChild((p) => ({ ...p, dob: e.target.value }))
-                                        }
-                                      />
-                                      <textarea
-                                        className="border rounded p-1 w-full col-span-2"
-                                        rows={2}
-                                        placeholder="Medical notes (optional)"
-                                        value={newChild.medical}
-                                        onChange={(e) =>
-                                          setNewChild((p) => ({ ...p, medical: e.target.value }))
-                                        }
-                                      />
-                                    </div>
-                                    <div className="mt-2">
-                                      <button
-                                        className="text-sm bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded disabled:opacity-60"
-                                        disabled={!newChild.firstName || savingChild}
-                                        onClick={addChild}
-                                      >
-                                        {savingChild ? "Adding..." : "Add Child"}
-                                      </button>
-                                    </div>
-                                  </>
-                                ) : (
-                                  <button
-                                    className="text-sm bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded"
-                                    onClick={() => setEditMode(true)}
-                                  >
-                                    Add Child
-                                  </button>
-                                )}
+                                <div className="text-gray-500 text-sm">Membership</div>
+                                <div className="font-medium">{detail.user?.membership?.status || "none"}</div>
                               </div>
-                              {/* END Add Child entry */}
+
+                              <div>
+                                <div className="text-gray-500 text-sm">Classes</div>
+                                <div className="font-medium">{Array.isArray(detail?.enrollments) ? detail.enrollments.length : detail?.enrollmentCount ?? 0}</div>
+                              </div>
+
+                              {/* Manage Children removed per new design; child edits live in each child block below */}
                             </div>
                           </div>
                         </div>
 
-                        {/* Manage existing children (edit/delete) */}
+                        {/* Manage existing children (edit/delete) */}{false && (
                         <div className="mt-4">
                           <div className="text-gray-500 text-sm">Manage Children</div>
                           {Array.isArray(detail.children) && detail.children.length > 0 ? (
@@ -973,9 +926,9 @@ export default function AdminUsersPage() {
                           ) : (
                             <div className="text-sm text-gray-500">No children yet.</div>
                           )}
-                        </div>
+                        </div>)}
 
-                      {Array.isArray(detail.children) && detail.children.length > 1 && (
+                      {Array.isArray(detail.children) && detail.children.length > 0 && (
                         <>
                           {(detail.children || []).map((child) => {
                             const childEnrollments = (detail.enrollments || []).filter((e) => String(e.childId) === String(child._id));
@@ -983,20 +936,77 @@ export default function AdminUsersPage() {
                             const dup = childEnrollments.some((e) => String(e.classId || e.class?._id) === String(selected));
                             const setSelected = (val) => setAddClassByChild((prev) => ({ ...prev, [String(child._id)]: val }));
                             const addForChild = async () => {
-                              setAddChildId(String(child._id));
-                              setAddClassId(String(selected));
-                              await addEnrollment();
+                              const childId = String(child._id);
+                              const classId = String(selected || "");
+                              if (!classId) return;
+                              await addEnrollment(childId, classId);
                               setAddClassByChild((prev) => ({ ...prev, [String(child._id)]: "" }));
                             };
                             const childName = [child.firstName, child.lastName].filter(Boolean).join(" ");
                             return (
                               <div className="bg-gray-50 border rounded p-4" key={String(child._id)}>
                                 <div className="flex items-center justify-between mb-2">
-                                  <h3 className="font-semibold">{childName ? `Enrolled Classes - ${childName}` : "Enrolled Classes"}</h3>
-                                  <button className="text-sm text-blue-600 hover:underline" onClick={() => setEnrollEdit((v) => !v)}>
-                                    {enrollEdit ? "Done" : "Edit"}
-                                  </button>
+                                  <h3 className="font-semibold">{childName || "Child"}</h3>
+                                  <div className="flex items-center gap-3">
+                                    {editChildId !== String(child._id) ? (
+                                      <button className="text-sm text-blue-600 hover:underline" onClick={() => startChildEdit(child)}>
+                                        Edit
+                                      </button>
+                                    ) : (
+                                      <>
+                                        <button className="text-sm text-gray-600 hover:underline" onClick={cancelChildEdit}>
+                                          Cancel
+                                        </button>
+                                        <button
+                                          className="text-sm bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded disabled:opacity-60"
+                                          disabled={!!childSaving[String(child._id)]}
+                                          onClick={() => deleteChildById(child._id)}
+                                        >
+                                          Delete
+                                        </button>
+                                        <button
+                                          className="text-sm bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded disabled:opacity-60"
+                                          disabled={!!childSaving[String(child._id)]}
+                                          onClick={() => saveChildEdit(child._id)}
+                                        >
+                                          {childSaving[String(child._id)] ? "Saving..." : "Save"}
+                                        </button>
+                                      </>
+                                    )}
+                                  </div>
                                 </div>
+                                {editChildId === String(child._id) && (
+                                  <div className="grid md:grid-cols-4 gap-2 text-sm mb-3">
+                                    <input
+                                      className="border rounded p-1 w-full"
+                                      placeholder="First name"
+                                      value={(childForms[String(child._id)]?.firstName) ?? ""}
+                                      onChange={(e) => setChildField(child._id, "firstName", e.target.value)}
+                                    />
+                                    <input
+                                      className="border rounded p-1 w-full"
+                                      placeholder="Last name"
+                                      value={(childForms[String(child._id)]?.lastName) ?? ""}
+                                      onChange={(e) => setChildField(child._id, "lastName", e.target.value)}
+                                    />
+                                    <input
+                                      type="date"
+                                      className="border rounded p-1 w-full"
+                                      value={(childForms[String(child._id)]?.dob) ?? ""}
+                                      onChange={(e) => setChildField(child._id, "dob", e.target.value)}
+                                    />
+                                    <div />
+                                    <div className="md:col-span-4">
+                                      <textarea
+                                        rows={2}
+                                        className="border rounded p-2 w-full"
+                                        placeholder="Medical details"
+                                        value={(childForms[String(child._id)]?.medical) ?? ""}
+                                        onChange={(e) => setChildField(child._id, "medical", e.target.value)}
+                                      />
+                                    </div>
+                                  </div>
+                                )}
                                 {childEnrollments.length > 0 ? (
                                   <div className="rounded border border-gray-200 overflow-hidden">
                                     <table className="min-w-full text-sm">
@@ -1013,7 +1023,7 @@ export default function AdminUsersPage() {
                                         {childEnrollments.map((e) => (
                                           <tr key={e._id} className="hover:bg-gray-50">
                                             <td className="px-3 py-2 border">
-                                              {enrollEdit ? (
+                                              {editChildId === String(child._id) ? (
                                                 <select
                                                   className="border rounded px-2 py-1 text-sm"
                                                   defaultValue={String(e.class?._id || "")}
@@ -1042,7 +1052,7 @@ export default function AdminUsersPage() {
                                             <td className="px-3 py-2 border">{[e.class?.day, e.class?.time].filter(Boolean).join(" | ")}</td>
                                             <td className="px-3 py-2 border">{e.class?.instructor || "TBA"}</td>
                                             <td className="px-3 py-2 border capitalize">{e.status || "active"}</td>
-                                            {enrollEdit && (
+                                              {editChildId === String(child._id) && (
                                               <td className="px-3 py-2 border">
                                                 <button className="text-sm text-red-600 hover:underline" onClick={() => removeEnrollment(String(e.class?._id || e.classId), String(child._id))}>
                                                   Remove
@@ -1057,7 +1067,7 @@ export default function AdminUsersPage() {
                                 ) : (
                                   <p className="text-sm text-gray-600">No enrollments yet.</p>
                                 )}
-                                {enrollEdit && (
+                                {editChildId === String(child._id) && (
                                   <div className="mt-3 flex items-center gap-2">
                                     <select className="border rounded px-2 py-1 text-sm" value={selected} onChange={(e) => setSelected(e.target.value)}>
                                       <option value="">Add to class.</option>
@@ -1081,202 +1091,44 @@ export default function AdminUsersPage() {
                         </>
                       )}
 
-                      {(Array.isArray(detail.children) ? detail.children.length : 0) <= 1 && (
-                      <div className="bg-gray-50 border rounded p-4">
-                        <div className="flex items-center justify-between mb-2">
-                          <h3 className="font-semibold">
-                            {(() => {
-                              const children = Array.isArray(detail?.children) ? detail.children : [];
-                              const chosen = children.length === 1 ? children[0] : null;
-                              const name = [chosen?.firstName, chosen?.lastName].filter(Boolean).join(" ");
-                              return name ? `Enrolled Classes - ${name}` : "Enrolled Classes";
-                            })()}
-                          </h3>
+                      {/* Add Child footer */}
+                      <div className="mt-4 flex justify-end">
+                        {!addChildOpen ? (
                           <button
-                            className="text-sm text-blue-600 hover:underline"
-                            onClick={() => setEnrollEdit((v) => !v)}
+                            className="text-sm bg-pink-600 hover:bg-pink-700 text-white px-3 py-1 rounded"
+                            onClick={() => setAddChildOpen(true)}
                           >
-                            {enrollEdit ? "Done" : "Edit"}
+                            Add Child
                           </button>
-                        </div>
-                        {Array.isArray(detail.enrollments) &&
-                        detail.enrollments.length > 0 ? (
-                          <div className="rounded border border-gray-200 overflow-hidden">
-                            <table className="min-w-full text-sm">
-                              <thead className="bg-gray-100">
-                                <tr>
-                                  <th className="px-3 py-2 border text-left">
-                                    Class
-                                  </th>
-                                  <th className="px-3 py-2 border text-left">
-                                    Schedule
-                                  </th>
-                                  <th className="px-3 py-2 border text-left">
-                                    Teacher
-                                  </th>
-                                  <th className="px-3 py-2 border text-left">
-                                    Status
-                                  </th>
-                                  {enrollEdit && (
-                                    <th className="px-3 py-2 border text-left">
-                                      Actions
-                                    </th>
-                                  )}
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {detail.enrollments.map((e) => (
-                                  <tr key={e._id} className="hover:bg-gray-50">
-                                    <td className="px-3 py-2 border">
-                                      {enrollEdit ? (
-                                        <select
-                                          className="border rounded px-2 py-1 text-sm"
-                                          defaultValue={String(
-                                            e.class?._id || ""
-                                          )}
-                                          onChange={(ev) =>
-                                            changeEnrollment(
-                                              String(e.childId),
-                                              String(e.class?._id || e.classId),
-                                              ev.target.value
-                                            )
-                                          }
-                                        >
-                                          <option value="">Select class</option>
-                                          {classes.map((c) => {
-                                            const enrolled = Number(
-                                              c.studentCount || 0
-                                            );
-                                            const cap =
-                                              c.capacity != null
-                                                ? String(c.capacity)
-                                                : "8";
-                                            const label = `${c.name} - ${
-                                              c.day || ""
-                                            } ${
-                                              c.time || ""
-                                            } (${enrolled}/${cap})`;
-                                            return (
-                                              <option key={c._id} value={c._id}>
-                                                {label}
-                                              </option>
-                                            );
-                                          })}
-                                        </select>
-                                      ) : (
-                                        e.class?.name || ""
-                                      )}
-                                    </td>
-                                    <td className="px-3 py-2 border">
-                                      {[e.class?.day, e.class?.time]
-                                        .filter(Boolean)
-                                        .join(" | ")}
-                                    </td>
-                                    <td className="px-3 py-2 border">
-                                      {e.class?.instructor || "TBA"}
-                                    </td>
-                                    <td className="px-3 py-2 border capitalize">
-                                      {e.status || "active"}
-                                    </td>
-                                    {enrollEdit && (
-                                      <td className="px-3 py-2 border">
-                                        <button
-                                          className="text-sm text-red-600 hover:underline"
-                                          onClick={() =>
-                                            removeEnrollment(
-                                              String(e.class?._id || e.classId),
-                                              String(e.childId)
-                                            )
-                                          }
-                                        >
-                                          Remove
-                                        </button>
-                                      </td>
-                                    )}
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
                         ) : (
-                          <p className="text-sm text-gray-600">
-                            No enrollments yet.
-                          </p>
-                        )}
-
-                        {enrollEdit && (
-                          <div className="mt-3 flex items-center gap-2">
-                            {Array.isArray(detail?.children) &&
-                              detail.children.length > 1 && (
-                                <>
-                                  <span className="text-sm text-gray-600">
-                                    Child
-                                  </span>
-                                  <select
-                                    className="border rounded px-2 py-1 text-sm"
-                                    value={addChildId}
-                                    onChange={(e) =>
-                                      setAddChildId(e.target.value)
-                                    }
-                                  >
-                                    <option value="">Select...</option>
-                                    {(detail?.children || []).map((ch) => (
-                                      <option key={ch._id} value={ch._id}>
-                                        {[ch.firstName, ch.lastName]
-                                          .filter(Boolean)
-                                          .join(" ")}
-                                      </option>
-                                    ))}
-                                  </select>
-                                </>
-                              )}
-                            <select
-                              className="border rounded px-2 py-1 text-sm"
-                              value={addClassId}
-                              onChange={(e) => setAddClassId(e.target.value)}
-                            >
-                              <option value="">Add to class...</option>
-                              {classes.map((c) => {
-                                const enrolled = Number(c.studentCount || 0);
-                                const cap =
-                                  c.capacity != null ? String(c.capacity) : "8";
-                                const label = `${c.name} - ${c.day || ""} ${
-                                  c.time || ""
-                                } (${enrolled}/${cap})`;
-                                return (
-                                  <option key={c._id} value={c._id}>
-                                    {label}
-                                  </option>
-                                );
-                              })}
-                            </select>
-                            <button
-                              className="text-sm bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded disabled:opacity-60"
-                              disabled={
-                                !addClassId ||
-                                !addChildId ||
-                                (uniqueEnrollments || []).some(
-                                  (e) =>
-                                    String(e.childId) === String(addChildId) &&
-                                    String(e.classId || e.class?._id) ===
-                                      String(addClassId)
-                                )
-                              }
-                              onClick={addEnrollment}
-                            >
-                              {(uniqueEnrollments || []).some(
-                                (e) =>
-                                  String(e.childId) === String(addChildId) &&
-                                  String(e.classId || e.class?._id) ===
-                                    String(addClassId)
-                              )
-                                ? "Already enrolled"
-                                : "Add"}
-                            </button>
+                          <div className="w-full bg-white border rounded p-3">
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="font-medium text-sm">Add Child</span>
+                              <div className="flex items-center gap-3">
+                                <button className="text-sm text-gray-600 hover:underline" onClick={() => { setAddChildOpen(false); setNewChild({ firstName: "", lastName: "", dob: "", medical: "" }); }}>
+                                  Cancel
+                                </button>
+                                <button
+                                  className="text-sm bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded disabled:opacity-60"
+                                  disabled={!newChild.firstName || savingChild}
+                                  onClick={async () => { await addChild(); setAddChildOpen(false); }}
+                                >
+                                  {savingChild ? "Saving..." : "Save"}
+                                </button>
+                              </div>
+                            </div>
+                            <div className="grid md:grid-cols-4 gap-2 text-sm">
+                              <input className="border rounded p-1 w-full" placeholder="First name" value={newChild.firstName} onChange={(e) => setNewChild((p) => ({ ...p, firstName: e.target.value }))} />
+                              <input className="border rounded p-1 w-full" placeholder="Last name" value={newChild.lastName} onChange={(e) => setNewChild((p) => ({ ...p, lastName: e.target.value }))} />
+                              <input type="date" className="border rounded p-1 w-full" value={newChild.dob} onChange={(e) => setNewChild((p) => ({ ...p, dob: e.target.value }))} />
+                              <div />
+                              <div className="md:col-span-4">
+                                <textarea rows={2} className="border rounded p-2 w-full" placeholder="Medical details" value={newChild.medical} onChange={(e) => setNewChild((p) => ({ ...p, medical: e.target.value }))} />
+                              </div>
+                            </div>
                           </div>
                         )}
                       </div>
-                      )}
 
                       <div className="bg-gray-50 border rounded p-4">
                         <h3 className="font-semibold mb-2">Payments</h3>
@@ -1327,6 +1179,7 @@ export default function AdminUsersPage() {
                       </div>
                     </div>
                   )}
+                </div>
                 </div>
               </div>
             )}

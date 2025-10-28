@@ -52,6 +52,25 @@ export async function PATCH(req: Request) {
       { $set: { ...allowed, updatedAt: new Date(), onboardingComplete: true } }
     );
 
+    // If medical provided, propagate to child documents for this user so admin UI shows it
+    if (typeof body.medical === "string") {
+      const u = await db
+        .collection("users")
+        .findOne({ email: session.user.email }, { projection: { _id: 1 } });
+      if (u?._id) {
+        try {
+          await db
+            .collection("children")
+            .updateMany(
+              { userId: u._id },
+              { $set: { medical: String(body.medical), updatedAt: new Date() } }
+            );
+        } catch (e) {
+          console.warn("[account/profile] propagate medical -> children failed:", e);
+        }
+      }
+    }
+
     return NextResponse.json({ success: true });
   } catch (err) {
     console.error("[account/profile] error:", err);

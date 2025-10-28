@@ -68,6 +68,14 @@ export default function DashboardPage() {
         .filter(Boolean)
         .join(", ")
     : "";
+  const addressLines = overview
+    ? [
+        [overview.address?.houseNumber, overview.address?.street].filter(Boolean).join(" "),
+        overview.address?.city,
+        overview.address?.county,
+        overview.address?.postcode,
+      ].filter(Boolean)
+    : [];
 
   const handleUpgrade = async () => {
     try {
@@ -90,8 +98,16 @@ export default function DashboardPage() {
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
             <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full mx-4 p-6 text-center">
               <h2 className="font-bold text-xl mb-3">You made it, {session?.user?.name || "there"}!</h2>
-              <p className="text-gray-700 mb-4">
+              <p className="text-gray-700 mb-4 hidden">
                 Your trial class was just the beginning — we'd love for you to stay with us!<br />
+                Get ready to become an official member of the Hive.
+              </p>
+              <p className="text-gray-700 mb-4 hidden">
+                Your trial class was just the beginning — we'd love for you to stay with us!<br />
+                Get ready to become an official member of the Hive.
+              </p>
+              <p className="text-gray-700 mb-4">
+                Your trial class was just the beginning &mdash; we'd love for you to stay with us!<br />
                 Get ready to become an official member of the Hive.
               </p>
               <div className="flex gap-3 justify-center">
@@ -116,14 +132,108 @@ export default function DashboardPage() {
         <p className="text-gray-600 mb-6">
           Your current role: <span className="font-medium">{role}</span>
         </p>
-
         {overview && (
           <div className="max-w-3xl mx-auto bg-white rounded-xl shadow p-6 text-left mb-6">
             <div className="flex items-center justify-between mb-3">
+              <h2 className="text-lg font-semibold">Parent Details</h2>
+            </div>
+            <div className="grid md:grid-cols-3 gap-x-4 gap-y-2 text-sm">
+              <div>
+                <div className="text-gray-500">Parent name</div>
+                <div className="font-medium">{parentName || "-"}</div>
+              </div>
+              <div>
+                <div className="text-gray-500">Phone</div>
+                <div className="font-medium">{overview.phone || "-"}</div>
+              </div>
+              <div>
+                <div className="text-gray-500">Email</div>
+                <div className="font-medium">{overview.email || "-"}</div>
+              </div>
+              <div className="md:col-start-3">
+                <div className="text-gray-500">Emergency contact details</div>
+                <div className="font-medium">{[
+                  overview.emergencyContact?.name,
+                  overview.emergencyContact?.phone,
+                  overview.emergencyContact?.relation,
+                ]
+                  .filter(Boolean)
+                  .join(" | ") || "Not provided"}</div>
+              </div>
+              <div className="md:col-span-3">
+                <div className="text-gray-500">Address details</div>
+                <div className="font-medium whitespace-pre-line">{addressLines.length ? addressLines.join('\n') : "-"}</div>
+              </div>
+            </div>
+          </div>
+        )}
+        
+
+        {overview && Array.isArray(overview.children) && overview.children.length > 0 && (
+          overview.children.map((ch, idx) => (
+            <div key={idx} className="max-w-3xl mx-auto bg-white rounded-xl shadow p-6 text-left mb-6">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-lg font-semibold">Child Details</h2>
+                <a href="/dashboard/settings" className="text-sm text-blue-600 hover:underline">Edit</a>
+              </div>
+              <div className="grid md:grid-cols-3 gap-4 text-sm">
+                <div>
+                  <div className="text-gray-500">Child name</div>
+                  <div className="font-medium">{[ch.firstName, ch.lastName].filter(Boolean).join(" ")}</div>
+                </div>
+                {(ch.dob || overview.child?.dob) && (
+                  <div>
+                    <div className="text-gray-500">Date of birth</div>
+                    <div className="font-medium">{new Date(ch.dob || overview.child?.dob).toLocaleDateString()}</div>
+                  </div>
+                )}
+                <div className="md:col-span-3"> 
+                  <div className="text-gray-500">Medical information</div>
+                  <div className="font-medium whitespace-pre-wrap">{ch.medical || overview.medical || "No medical information on file. Please update in Settings."}</div>
+                </div>
+                {/* Enrolled classes for this child */}
+                {(() => {
+                  const rows = (overview.enrollments || []).filter(
+                    (e) => String(e.childId || "") === String(ch._id || "")
+                  );
+                  if (rows.length === 0) return null;
+                  return (
+                    <div className="md:col-span-3 mt-4">
+                      <h3 className="text-base font-semibold mb-2">Enrolled Classes</h3>
+                      <div className="rounded-lg border border-gray-200 overflow-hidden">
+                        <table className="min-w-full text-sm">
+                          <thead className="bg-gray-100">
+                            <tr>
+                              <th className="px-4 py-2 border text-left">Class</th>
+                              <th className="px-4 py-2 border text-left">Schedule</th>
+                              <th className="px-4 py-2 border text-left">Teacher</th>
+                              <th className="px-4 py-2 border text-left">Status</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {rows.map((e) => (
+                              <tr key={String(e._id)} className="hover:bg-gray-50">
+                                <td className="px-4 py-2 border">{e.class?.name || ""}</td>
+                                <td className="px-4 py-2 border">{[e.class?.day, e.class?.time].filter(Boolean).join(" | ")}</td>
+                                <td className="px-4 py-2 border">{e.class?.instructor || "TBA"}</td>
+                                <td className="px-4 py-2 border">{e.status || "active"}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+          ))
+        )}
+        {overview && (!Array.isArray(overview.children) || overview.children.length === 0) && (
+          <div className="max-w-3xl mx-auto bg-white rounded-xl shadow p-6 text-left mb-6">
+            <div className="flex items-center justify-between mb-3">
               <h2 className="text-lg font-semibold">Child Details</h2>
-              <a href="/dashboard/settings" className="text-sm text-blue-600 hover:underline">
-                Edit
-              </a>
+              <a href="/dashboard/settings" className="text-sm text-blue-600 hover:underline">Edit</a>
             </div>
             <div className="grid md:grid-cols-3 gap-4 text-sm">
               <div>
@@ -148,79 +258,39 @@ export default function DashboardPage() {
                   {overview.medical || "No medical information on file. Please update in Settings."}
                 </div>
               </div>
-              <div className="md:col-span-3">
-                <div className="text-gray-500">Emergency contact details</div>
-                <div className="font-medium">
-                  {
-                    [
-                      overview.emergencyContact?.name,
-                      overview.emergencyContact?.phone,
-                      overview.emergencyContact?.relation,
-                    ]
-                      .filter(Boolean)
-                      .join(" | ") || "Not provided"
-                  }
+              {/* Enrolled classes for this child (no children[] case) */}
+              {Array.isArray(overview.enrollments) && overview.enrollments.length > 0 && (
+                <div className="md:col-span-3 mt-4">
+                  <h3 className="text-base font-semibold mb-2">Enrolled Classes</h3>
+                  <div className="rounded-lg border border-gray-200 overflow-hidden">
+                    <table className="min-w-full text-sm">
+                      <thead className="bg-gray-100">
+                        <tr>
+                          <th className="px-4 py-2 border text-left">Class</th>
+                          <th className="px-4 py-2 border text-left">Schedule</th>
+                          <th className="px-4 py-2 border text-left">Teacher</th>
+                          <th className="px-4 py-2 border text-left">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {overview.enrollments.map((e) => (
+                          <tr key={String(e._id)} className="hover:bg-gray-50">
+                            <td className="px-4 py-2 border">{e.class?.name || ""}</td>
+                            <td className="px-4 py-2 border">{[e.class?.day, e.class?.time].filter(Boolean).join(" | ")}</td>
+                            <td className="px-4 py-2 border">{e.class?.instructor || "TBA"}</td>
+                            <td className="px-4 py-2 border">{e.status || "active"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           </div>
         )}
-        {/* Enrolled Classes */}
-        {Array.isArray(overview?.enrollments) && overview.enrollments.length > 0 && (
-          <div className="max-w-3xl mx-auto bg-white rounded-xl shadow p-6 text-left mb-6">
-            <h2 className="text-lg font-semibold mb-3">Enrolled Classes</h2>
-            <div className="rounded-lg border border-gray-200 overflow-hidden">
-              <table className="min-w-full text-sm">
-                <thead className="bg-gray-100">
-                  <tr>
-                    <th className="px-4 py-2 border text-left">Class</th>
-                    <th className="px-4 py-2 border text-left">Schedule</th>
-                    <th className="px-4 py-2 border text-left">Teacher</th>
-                    <th className="px-4 py-2 border text-left">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {overview.enrollments.map((e) => (
-                    <tr key={e._id} className="hover:bg-gray-50">
-                      <td className="px-4 py-2 border">{e.class?.name || ""}</td>
-                      <td className="px-4 py-2 border">
-                        {[e.class?.day, e.class?.time].filter(Boolean).join(" | ")}
-                      </td>
-                      <td className="px-4 py-2 border">{e.class?.instructor || "TBA"}</td>
-                      <td className="px-4 py-2 border">{e.status || "active"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
+        {/* Enrolled Classes moved into each child card above */}
 
-        {overview && (
-          <div className="max-w-3xl mx-auto bg-white rounded-xl shadow p-6 text-left mb-6">
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="text-lg font-semibold">Parent Details</h2>
-            </div>
-            <div className="grid md:grid-cols-3 gap-4 text-sm">
-              <div>
-                <div className="text-gray-500">Parent name</div>
-                <div className="font-medium">{parentName || "-"}</div>
-              </div>
-              <div>
-                <div className="text-gray-500">Phone</div>
-                <div className="font-medium">{overview.phone || "-"}</div>
-              </div>
-              <div>
-                <div className="text-gray-500">Email</div>
-                <div className="font-medium">{overview.email || "-"}</div>
-              </div>
-              <div className="md:col-span-3">
-                <div className="text-gray-500">Address details</div>
-                <div className="font-medium">{addressLine || "-"}</div>
-              </div>
-            </div>
-          </div>
-        )}
         {/* Recent Payments */}
         {Array.isArray(overview?.payments) && overview.payments.length > 0 && (
           <div className="max-w-3xl mx-auto bg-white rounded-xl shadow p-6 text-left mb-6">

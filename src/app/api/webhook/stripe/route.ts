@@ -89,7 +89,7 @@ export async function POST(req: Request): Promise<Response> {
             { upsert: true }
           );
 
-          // Enrollment if classId exists
+          // Enrollment if classId exists (attach childId so UI can group by child)
           if ((trial as any)?.classId) {
             const userDoc = await db.collection("users").findOne({ email });
             if (userDoc) {
@@ -97,13 +97,41 @@ export async function POST(req: Request): Promise<Response> {
               try {
                 classObjectId = new ObjectId(String((trial as any)?.classId));
               } catch {}
+
+              // Ensure a child document exists for this user; create from trial names if needed
+              let childDoc = await db.collection("children").findOne({ userId: (userDoc as any)._id });
+              if (!childDoc) {
+                const chFirst = (trial as any)?.child?.firstName || split((trial as any)?.childName).first;
+                const chLast = (trial as any)?.child?.lastName || split((trial as any)?.childName).last;
+                const ins = await db.collection("children").insertOne({
+                  userId: (userDoc as any)._id,
+                  firstName: chFirst || "",
+                  lastName: chLast || "",
+                  medical: (userDoc as any)?.medical || "",
+                  createdAt: new Date(),
+                  updatedAt: new Date(),
+                });
+                childDoc = { _id: ins.insertedId } as any;
+              }
+              // If child exists but medical empty and user has medical, backfill
+              else if (!(childDoc as any).medical && (userDoc as any)?.medical) {
+                await db
+                  .collection("children")
+                  .updateOne({ _id: (childDoc as any)._id }, { $set: { medical: (userDoc as any).medical, updatedAt: new Date() } });
+              }
+
               if (classObjectId) {
-                const existingEnroll = await db
-                  .collection("enrollments")
-                  .findOne({ userId: (userDoc as any)._id, classId: classObjectId });
-                if (!existingEnroll) {
-                  await db.collection("enrollments").insertOne({
+                const enrollmentsCol = db.collection("enrollments");
+                const existingEnroll = await enrollmentsCol.findOne({ userId: (userDoc as any)._id, classId: classObjectId });
+                if (existingEnroll) {
+                  // Heal legacy rows missing childId
+                  if (!(existingEnroll as any).childId) {
+                    await enrollmentsCol.updateOne({ _id: (existingEnroll as any)._id }, { $set: { childId: (childDoc as any)._id } });
+                  }
+                } else {
+                  await enrollmentsCol.insertOne({
                     userId: (userDoc as any)._id,
+                    childId: (childDoc as any)._id,
                     classId: classObjectId,
                     status: "active",
                     attendedDates: [],

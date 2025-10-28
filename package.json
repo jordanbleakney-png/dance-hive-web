@@ -12,7 +12,8 @@
                     "normalize-payments":  "node scripts/normalizePayments.js",
                     "migrate-users-names": "node scripts/migrateUsersNames.js",
                     "normalize-users-shape": "node scripts/normalizeUsersShape.js",
-                    "cleanup-trials": "node scripts/cleanupTrialBookings.js"
+                    "cleanup-trials": "node scripts/cleanupTrialBookings.js",
+                    "reset-test-data": "node scripts/resetTestData.js"
                 },
     "dependencies":  {
                          "@auth/core":  "^0.41.0",

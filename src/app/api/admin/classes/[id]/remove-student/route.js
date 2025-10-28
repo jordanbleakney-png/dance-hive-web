@@ -1,35 +1,40 @@
-﻿import { ObjectId } from 'mongodb';\nimport { auth } from "@/app/api/auth/[...nextauth]/route";
+import { ObjectId } from "mongodb";
+import { auth } from "@/app/api/auth/[...nextauth]/route";
 import { getDb } from "@/lib/dbConnect";
 
 export async function POST(req, context) {
-  const session = await auth();
-  if (!session || session.user.role !== "admin") {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+  try {
+    const session = await auth();
+    if (!session || session.user.role !== "admin") {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+    }
+
+    const body = await req.json().catch(() => ({}));
+    const email = String(body?.email || "").toLowerCase();
+    const { id } = context.params || {};
+    if (!email || !id) {
+      return new Response(JSON.stringify({ error: "Missing email or id" }), { status: 400 });
+    }
+
+    const db = await getDb();
+    const user = await db.collection("users").findOne({ email });
+    if (!user) {
+      return new Response(JSON.stringify({ error: "User not found" }), { status: 404 });
+    }
+
+    // Remove enrollment for this class
+    let classObjectId;
+    try {
+      classObjectId = new ObjectId(String(id));
+    } catch {
+      return new Response(JSON.stringify({ error: "Invalid id" }), { status: 400 });
+    }
+    await db.collection("enrollments").deleteOne({ userId: user._id, classId: classObjectId });
+
+    return new Response(JSON.stringify({ success: true }), { status: 200 });
+  } catch (e) {
+    console.error("[admin/classes/:id/remove-student] error", e);
+    return new Response(JSON.stringify({ error: "Internal Server Error" }), { status: 500 });
   }
-
-  const body = await req.json();
-  const email = body.email;
-  const { id } = context.params;
-
-  if (!email || !id) {
-    return new Response(JSON.stringify({ error: "Missing data" }), { status: 400 });
-  }
-
-  const db = await getDb();
-
-  // 1) Remove membership from user and downgrade to customer
-  const userFilter = { email: email.toLowerCase() };
-  await db.collection("users").updateOne(userFilter, {
-    $unset: { membership: "" },
-    $set: { role: "customer" },
-  });
-
-  // 2) Remove their booking entry (legacy)
-  await db.collection("bookings").deleteOne({ email: email.toLowerCase(), classId: id });
-
-  // Optionally remove from enrollments (if present)
-  await db.collection("enrollments").deleteOne({ classId: new ObjectId(id), userId: user._id });
-
-  return new Response(JSON.stringify({ success: true }), { status: 200 });
 }
 

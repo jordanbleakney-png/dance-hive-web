@@ -26,7 +26,13 @@ export default function BookTrialPage() {
         const res = await fetch("/api/classes");
         if (!res.ok) throw new Error("Failed to load classes");
         const data = await res.json();
-        setClasses(data);
+        const normalized = (Array.isArray(data) ? data : []).map((c) => ({
+          _id: (c && typeof c._id === "object" && c._id?.$oid) ? c._id.$oid : String(c?._id || ""),
+          name: c?.name || "",
+          day: c?.day || "",
+          time: c?.time || "",
+        }));
+        setClasses(normalized);
       } catch (err) {
         console.error(err);
         toast.error("Unable to load classes");
@@ -210,4 +216,3 @@ export default function BookTrialPage() {
     </div>
   );
 }
-

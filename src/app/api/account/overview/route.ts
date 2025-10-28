@@ -32,6 +32,13 @@ export async function GET() {
     }
 
     const userId = (user as any)._id as ObjectId;
+
+    // Load all children for this user to support multi-child dashboards
+    const children = await db
+      .collection("children")
+      .find({ userId })
+      .project({ _id: 1, firstName: 1, lastName: 1, dob: 1, medical: 1 })
+      .toArray();
     const enrollments = await db
       .collection("enrollments")
       .aggregate([
@@ -49,6 +56,7 @@ export async function GET() {
           $project: {
             _id: 1,
             status: 1,
+            childId: 1,
             class: {
               _id: "$class._id",
               name: "$class.name",
@@ -75,6 +83,7 @@ export async function GET() {
     return NextResponse.json({
       parent: (user as any).parent || null,
       child: (user as any).child || null,
+      children,
       medical: (user as any).medical || null,
       emergencyContact: (user as any).emergencyContact || null,
       membership: (user as any).membership || null,
