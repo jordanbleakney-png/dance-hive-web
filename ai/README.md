@@ -54,9 +54,10 @@ trialBookings schema (effective)
 
 - classes: name, style, day, time, capacity, instructor
 - trialBookings: parent{}, child{}, classId, status, createdAt, updatedAt, convertedAt
-- users: email, password (hashed), role (trial|customer|member|teacher|admin), phone, parent{firstName,lastName}, child{firstName,lastName,dob?}, address{houseNumber,street,city,county,postcode}, membership{status, plan, classId, timestamps}
-- enrollments: userId, classId, status, attendedDates[], createdAt
-  - Indexes: unique { userId:1, classId:1 }, plus { userId:1 }, { classId:1 }
+- children: userId, firstName, lastName, dob?, medical?, emergencyContact?, createdAt, updatedAt
+- users: email, password (hashed), role (trial|customer|member|teacher|admin), phone, parent{firstName,lastName}, address{houseNumber,street,city,county,postcode}, membership{status, plan, timestamps}, flags{}
+- enrollments: userId, childId, classId, status, attendedDates[], createdAt
+  - Indexes: unique { userId:1, childId:1, classId:1 }, plus { userId:1 }, { classId:1 }, { childId:1 }
 - payments: email, amount (pounds), currency (GBP), payment_status, payment_intent, createdAt
 - membershipHistory: conversions/renewals/cancellations with timestamps
 - processedEvents: Stripe webhook idempotency keys
@@ -81,6 +82,29 @@ trialBookings schema (effective)
 - Do keep `/api/register` disabled; don't add public sign-up.
 - Do standardize on `getDb()` for Mongo access.
 - Don't log secrets or credentials; don't store plaintext passwords.
+
+## 9) Archive/Restore & Reactivation
+
+Admin Archive & Previous Customers
+- Archive endpoint snapshots a member’s user + children (+ enrollments) into `previousCustomers` and deletes them from active collections.
+- Admin page `/admin/previous-customers` lists archived users with Parent, Child, Email, Archived (date), Reason, and Restore action.
+- Archived users are excluded from Admin Trials and Teacher registers APIs.
+
+Restore & Returning Customers
+- Restore endpoint recreates user + children from the snapshot and normalizes account:
+  - `role = customer`, `membership.status = "none"`, `flags.reactivationPending = true`.
+- Member dashboard shows a tailored “Welcome back” modal with a "Re‑activate Membership" CTA when `reactivationPending` is set.
+- Stripe checkout + webhook activate membership and clear `flags.reactivationPending`.
+
+API touchpoints
+- `/api/admin/users/archive` (POST)
+- `/api/admin/users/restore` (POST)
+- `/api/admin/previous-customers` (GET)
+- `/api/account/overview` returns `children[]` and `flags`.
+
+Operational notes
+- Ensure indexes exist via `npm run create-indexes`.
+- Use `npm run reset-test-data` during development to reset fixtures.
 
 ### Billing Implementation Notes (GC)
 - Keep enrollments as the source of truth for class participation.

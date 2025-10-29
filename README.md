@@ -1,4 +1,4 @@
-﻿# Dance Hive Web Application
+# Dance Hive Web Application
 
  Dance Hive is a full-stack dance school platform built with Next.js (App Router), MongoDB, NextAuth, and payments (Stripe for testing, moving to GoCardless in production). The core user journey is trial -> attended -> converted -> paid member. Public self-sign up is disabled by design.
 
@@ -17,7 +17,7 @@
 - Framework: Next.js 14 (App Router)
 - Database: MongoDB (native driver)
 - Auth: NextAuth.js (Credentials provider, JWT sessions)
-- Payments: Stripe (testing only) â†’ GoCardless (planned production). Webhooks used for membership activation and payments recording.
+- Payments: Stripe (testing only) → GoCardless (planned production). Webhooks used for membership activation and payments recording.
 - Styling: TailwindCSS 4
 - Deployment: Vercel
 
@@ -80,7 +80,7 @@ When a user logs in with role `customer` and membership status `none`, a welcome
   - If Atlas denies `collMod` when adjusting the `processedEvents` TTL, the app logs a single informational line. Either ignore it or change TTL in Atlas.
 
 - Teacher Register (weekly)
-  - Registers are per-week and tied to the classâ€™s scheduled weekday. Quick navigation shows last/this/next week only on that weekday.
+  - Registers are per-week and tied to the class’s scheduled weekday. Quick navigation shows last/this/next week only on that weekday.
   - Attendance cannot be marked for future weeks (UI disabled + API validation). Unmarking is supported.
 
 ## API Cheatsheet
@@ -105,9 +105,9 @@ When a user logs in with role `customer` and membership status `none`, a welcome
 
 - Unified child model: `children` collection is the source of truth. Trials convert to a user (parent) + a child document. No new writes to `users.child`.
 - Enrollments are per-child: `enrollments` documents carry `childId` and are unique by `{ userId, childId, classId }` (index ensured on startup).
-- Admin › Users modal:
+- Admin � Users modal:
   - Always shows User Details. With multiple children, renders one "Enrolled Classes - Child Name" section per child; with a single child the header reads "Enrolled Classes - Child Name".
-  - Add Child: collapsed by default — shows only an "Add Child" button; clicking enters Edit mode where fields appear; submitting creates the child.
+  - Add Child: collapsed by default � shows only an "Add Child" button; clicking enters Edit mode where fields appear; submitting creates the child.
   - Enrollment UX: duplicate prevention in UI and API; capacity enforced. A cleanup endpoint exists for legacy duplicates.
 - Teacher register (weekly): class-day anchored; future-week marking disabled (UI + API). Attendance updates per-child enrollments.
 - API hardening: admin/teacher routes check roles server-side; payment webhooks are the source of truth.
@@ -115,23 +115,75 @@ When a user logs in with role `customer` and membership status `none`, a welcome
 ## Billing Plan (GoCardless)
 
 - Replace the Stripe test flow with GoCardless hosted redirect to create a customer + mandate, then create a subscription.
-- Compute the monthly amount from `enrollmentCount` (e.g., Â£30 Ã— active classes, or a tiered mapping) and update the GC subscription amount. GC uses a fixed amount per subscription (no quantity field).
-- Prefer applying amount changes from the next collection date. If you need midâ€‘cycle adjustments, create oneâ€‘off Payments for proration.
+- Compute the monthly amount from `enrollmentCount` (e.g., £30 × active classes, or a tiered mapping) and update the GC subscription amount. GC uses a fixed amount per subscription (no quantity field).
+- Prefer applying amount changes from the next collection date. If you need mid‑cycle adjustments, create one‑off Payments for proration.
 
 ## Next Steps
 
-- Admin modal: optional â€œAdd Childâ€ form to create children quickly and attach enrollments.
-- Member dashboard: show perâ€‘child enrollments and â€œClasses: Nâ€ summary.
+- Admin modal: optional “Add Child” form to create children quickly and attach enrollments.
+- Member dashboard: show per‑child enrollments and “Classes: N” summary.
 - GoCardless integration: redirect flow, webhooks, and subscription amount updates driven by `enrollmentCount`.
 
 ### Data/Index Notes
-- `enrollments` is the source of truth for who is in which class. Indexes:
+ - `enrollments` is the source of truth for who is in which class. Indexes:
   - Unique `{ userId: 1, classId: 1 }` (prevents duplicate enrollment)
   - `{ userId: 1 }`, `{ classId: 1 }` for lookups
-- `enrollmentCount` is derived as `enrollments.length` and returned by `/api/customers/[email]` for convenience.
+ - `enrollmentCount` is derived as `enrollments.length` and returned by `/api/customers/[email]` for convenience.
+
+## Admin Archive/Restore & Reactivation (Overview)
+
+- Archive (Admin): moves a member�s `user`, `children`, and `enrollments` to `previousCustomers` and deletes them from active collections. Archived users are excluded from Admin Trials and Teacher registers.
+- Previous Customers page: `/admin/previous-customers` lists archived users with columns Parent, Child, Email, Archived (date only), Reason, and Actions (Restore). Restoring removes the row immediately.
+- Restore (Admin): recreates the user + children from the snapshot and normalizes the account to `role = "customer"`, `membership.status = "none"`, and `flags.reactivationPending = true`.
+- Reactivation journey: on the next login after restore, the dashboard shows a �Welcome back� modal with a "Re-activate Membership" CTA. After checkout completes, the Stripe webhook activates membership and clears the `flags.reactivationPending` flag.
+
+## API and Data Model Updates (2025-10)
+
+- Account Overview: `/api/account/overview` now returns `children[]` and includes `flags` alongside `membership` so the dashboard can show the returning-customer copy.
+- Admin Endpoints:
+  - `/api/admin/users/archive` archives a member to `previousCustomers`.
+  - `/api/admin/users/restore` restores a previous customer and sets `reactivationPending`.
+  - `/api/admin/previous-customers` lists archived users (restored entries are excluded).
+- Enrollments per child: `enrollments` documents include `childId`. The unique index is `{ userId: 1, childId: 1, classId: 1 }` to prevent duplicates per child.
+- Stripe webhook: upon successful membership activation, the handler also clears `flags.reactivationPending`.
+
+## Developer Utilities
+
+- `npm run reset-test-data` wipes and reseeds test data (see `scripts/resetTestData.js`).
+- `npm run create-indexes` creates required MongoDB indexes (unique and TTL), including the webhook idempotency TTL on `processedEvents`.
 
 ### Billing Notes (GoCardless)
-- Compute monthly price from `enrollmentCount` (e.g., Â£30 Ã— count or tiered mapping) and update the GoCardless subscription amount. GC does not support quantities; amount is fixed per subscription.
+- Compute monthly price from `enrollmentCount` (e.g., £30 × count or tiered mapping) and update the GoCardless subscription amount. GC does not support quantities; amount is fixed per subscription.
 - Prefer applying the new amount from the next collection date (simple to operate). If you need mid-cycle adjustments, create one-off payments for proration.
 
 
+
+
+## Reactivation QA Checklist
+
+- Prepare
+  - Run 
+pm run reset-test-data (optional) and 
+pm run create-indexes.
+  - Ensure Stripe webhook secret is configured and the webhook handler is reachable in dev.
+- Archive a member
+  - From Admin Users, archive a member (or call /api/admin/users/archive).
+  - Verify previousCustomers contains a snapshot. Confirm users, children, and enrollments are removed.
+  - Confirm Admin Trials and Teacher registers do not list the archived user/trials.
+- Restore the customer
+  - Use /admin/previous-customers ? Restore. Row should disappear after success.
+  - Verify restored user has ole = customer, membership.status = none, and lags.reactivationPending = true.
+  - Verify children are recreated for the user.
+- Member login (returning)
+  - Log in as the restored user. A modal should show �Welcome back, {FirstName}!� with the returning copy and a "Re-activate Membership" CTA.
+  - Close with "Not now" hides the modal; reloading should show it again until activation.
+- Checkout and webhook
+  - Click CTA to start checkout; complete the flow.
+  - Confirm webhook sets membership.status = active and unsets lags.reactivationPending.
+  - Next login: modal no longer appears; dashboard reflects active membership.
+- Enrollments and UI
+  - Verify enrolled classes render per child (grouped by childId) where applicable.
+  - Admin/Class detail pages show the correct child for multi-child households.
+- Previous Customers hygiene
+  - Restored user should no longer appear in /admin/previous-customers.
+  - Archived entries show date only in the "Archived" column.
