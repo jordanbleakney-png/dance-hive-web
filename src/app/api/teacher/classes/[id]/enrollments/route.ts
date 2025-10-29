@@ -93,7 +93,13 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
         }
       });
     }
-    const trials = trialsRaw.filter((t: any) => !memberEmails.has(String(t.email || '').toLowerCase()));
+    const prevEmailsArr = await db.collection('previousCustomers').find({}).project({ email: 1 } as any).toArray();
+    const prevEmails = new Set(prevEmailsArr.map((d:any)=> String(d.email || '').toLowerCase()));
+    const trials = trialsRaw.filter((t: any) => {
+      const emailKey = String(t.email || '').toLowerCase();
+      const archivedTrial = String(t.status || '').toLowerCase() === 'archived';
+      return !memberEmails.has(emailKey) && !prevEmails.has(emailKey) && !archivedTrial;
+    });
 
     return NextResponse.json({ enrollments, trials });
   } catch (err) {

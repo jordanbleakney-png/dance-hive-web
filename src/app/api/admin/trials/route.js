@@ -37,11 +37,15 @@ export async function GET() {
       };
     });
 
-    // Remove trials once the associated user is a member
+    // Remove trials once the associated user is a member or trial/user archived
+    const prevEmailsArr = await db.collection('previousCustomers').find({}).project({ email: 1 }).toArray();
+    const prevEmails = new Set(prevEmailsArr.map((d)=> String(d.email || '').toLowerCase()));
     const filtered = enriched.filter((t) => {
       const m = t.user?.membership?.status;
       const isMember = t.user?.role === "member" || m === "active";
-      return !isMember;
+      const isArchivedTrial = String(t.status || '').toLowerCase() === 'archived';
+      const isArchivedUser = prevEmails.has(String(t.email || '').toLowerCase());
+      return !isMember && !isArchivedTrial && !isArchivedUser;
     });
 
     return NextResponse.json({ success: true, trials: filtered }, { status: 200 });
@@ -53,4 +57,3 @@ export async function GET() {
     );
   }
 }
-

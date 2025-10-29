@@ -23,6 +23,7 @@ export async function GET() {
           address: 1,
           phone: 1,
           email: 1,
+          flags: 1, // add this
         },
       }
     );
@@ -74,7 +75,15 @@ export async function GET() {
       .collection("payments")
       .find(
         { email: session.user.email.toLowerCase() },
-        { projection: { amount: 1, currency: 1, payment_status: 1, createdAt: 1, timestamp: 1 } }
+        {
+          projection: {
+            amount: 1,
+            currency: 1,
+            payment_status: 1,
+            createdAt: 1,
+            timestamp: 1,
+          },
+        }
       )
       .sort({ createdAt: -1 })
       .limit(5)
@@ -92,9 +101,13 @@ export async function GET() {
       email: (user as any).email || null,
       enrollments,
       payments,
+      flags: (user as any).flags || null, // add this
     });
   } catch (err) {
     console.error("[account/overview] GET error:", err);
-    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Internal Server Error" },
+      { status: 500 }
+    );
   }
 }

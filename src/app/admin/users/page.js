@@ -118,6 +118,30 @@ export default function AdminUsersPage() {
     }
   }
 
+  async function archiveCurrentUser() {
+    if (!detail?.user?.email) return;
+    const reason = prompt("Reason for archive (optional)", "");
+    const ok = confirm("Cancel membership and archive this user? This removes user, children and enrollments.");
+    if (!ok) return;
+    try {
+      const res = await fetch('/api/admin/users/archive', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: detail.user.email, reason })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to archive');
+      toast.success('User archived');
+      setDetailOpen(false);
+      // Refresh list
+      const r = await fetch('/api/admin/users');
+      const d = await r.json();
+      if (r.ok) setUsers(d.users || []);
+    } catch (e) {
+      toast.error(e.message || String(e));
+    }
+  }
+
   // No per-child detail editor here; Manage Children handles child fields
 
   // Preselect the only child for enrollment when exactly one exists
@@ -1176,6 +1200,14 @@ export default function AdminUsersPage() {
                             No payments recorded.
                           </p>
                         )}
+                      </div>
+                      <div className="mt-4 flex justify-end">
+                        <button
+                          className="text-sm bg-pink-600 hover:bg-pink-700 text-white px-4 py-1.5 rounded"
+                          onClick={archiveCurrentUser}
+                        >
+                          Remove User
+                        </button>
                       </div>
                     </div>
                   )}

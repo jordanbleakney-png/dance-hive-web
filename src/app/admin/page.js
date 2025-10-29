@@ -11,6 +11,10 @@ export default function AdminPage() {
           <h2 className="font-semibold mb-1">Users</h2>
           <p className="text-gray-600 text-sm">Search and view user accounts</p>
         </a>
+        <a href="/admin/previous-customers" className="block bg-white p-5 rounded-xl shadow hover:shadow-md transition">
+          <h2 className="font-semibold mb-1">Previous Customers</h2>
+          <p className="text-gray-600 text-sm">Restore archived customers</p>
+        </a>
         <a href="/admin/trials" className="block bg-white p-5 rounded-xl shadow hover:shadow-md transition">
           <h2 className="font-semibold mb-1">Trials</h2>
           <p className="text-gray-600 text-sm">Manage trial bookings</p>

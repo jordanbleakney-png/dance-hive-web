@@ -58,13 +58,27 @@ export async function POST(req: Request): Promise<Response> {
             );
 
           // Build normalized names/phone
-          const parentFirstName = (trial as any)?.parent?.firstName || split((trial as any)?.parentName).first;
-          const parentLastName = (trial as any)?.parent?.lastName || split((trial as any)?.parentName).last;
-          const fullParentName = `${parentFirstName || ""}${parentFirstName && parentLastName ? " " : ""}${parentLastName || ""}`.trim() || "User";
-          const phone = (trial as any)?.phone || (trial as any)?.parentPhone || "";
-          const childFirstName = (trial as any)?.child?.firstName || split((trial as any)?.childName).first;
-          const childLastName = (trial as any)?.child?.lastName || split((trial as any)?.childName).last;
-          const childName = `${childFirstName || ""}${childFirstName && childLastName ? " " : ""}${childLastName || ""}`.trim();
+          const parentFirstName =
+            (trial as any)?.parent?.firstName ||
+            split((trial as any)?.parentName).first;
+          const parentLastName =
+            (trial as any)?.parent?.lastName ||
+            split((trial as any)?.parentName).last;
+          const fullParentName =
+            `${parentFirstName || ""}${
+              parentFirstName && parentLastName ? " " : ""
+            }${parentLastName || ""}`.trim() || "User";
+          const phone =
+            (trial as any)?.phone || (trial as any)?.parentPhone || "";
+          const childFirstName =
+            (trial as any)?.child?.firstName ||
+            split((trial as any)?.childName).first;
+          const childLastName =
+            (trial as any)?.child?.lastName ||
+            split((trial as any)?.childName).last;
+          const childName = `${childFirstName || ""}${
+            childFirstName && childLastName ? " " : ""
+          }${childLastName || ""}`.trim();
 
           // Upsert user with nested parent/child to mirror trialBookings
           await db.collection("users").updateOne(
@@ -80,11 +94,18 @@ export async function POST(req: Request): Promise<Response> {
                   joinedAt: new Date(),
                   classId: (trial as any)?.classId || null,
                 },
-                parent: { firstName: parentFirstName, lastName: parentLastName },
+                parent: {
+                  firstName: parentFirstName,
+                  lastName: parentLastName,
+                },
                 child: { firstName: childFirstName, lastName: childLastName },
-                age: Number((trial as any)?.childAge) || (trial as any)?.age || null,
+                age:
+                  Number((trial as any)?.childAge) ||
+                  (trial as any)?.age ||
+                  null,
                 updatedAt: new Date(),
               },
+              $unset: { "flags.reactivationPending": "" }, // ✅ CLEAR FLAG HERE
             },
             { upsert: true }
           );
@@ -99,10 +120,16 @@ export async function POST(req: Request): Promise<Response> {
               } catch {}
 
               // Ensure a child document exists for this user; create from trial names if needed
-              let childDoc = await db.collection("children").findOne({ userId: (userDoc as any)._id });
+              let childDoc = await db
+                .collection("children")
+                .findOne({ userId: (userDoc as any)._id });
               if (!childDoc) {
-                const chFirst = (trial as any)?.child?.firstName || split((trial as any)?.childName).first;
-                const chLast = (trial as any)?.child?.lastName || split((trial as any)?.childName).last;
+                const chFirst =
+                  (trial as any)?.child?.firstName ||
+                  split((trial as any)?.childName).first;
+                const chLast =
+                  (trial as any)?.child?.lastName ||
+                  split((trial as any)?.childName).last;
                 const ins = await db.collection("children").insertOne({
                   userId: (userDoc as any)._id,
                   firstName: chFirst || "",
@@ -114,19 +141,34 @@ export async function POST(req: Request): Promise<Response> {
                 childDoc = { _id: ins.insertedId } as any;
               }
               // If child exists but medical empty and user has medical, backfill
-              else if (!(childDoc as any).medical && (userDoc as any)?.medical) {
-                await db
-                  .collection("children")
-                  .updateOne({ _id: (childDoc as any)._id }, { $set: { medical: (userDoc as any).medical, updatedAt: new Date() } });
+              else if (
+                !(childDoc as any).medical &&
+                (userDoc as any)?.medical
+              ) {
+                await db.collection("children").updateOne(
+                  { _id: (childDoc as any)._id },
+                  {
+                    $set: {
+                      medical: (userDoc as any).medical,
+                      updatedAt: new Date(),
+                    },
+                  }
+                );
               }
 
               if (classObjectId) {
                 const enrollmentsCol = db.collection("enrollments");
-                const existingEnroll = await enrollmentsCol.findOne({ userId: (userDoc as any)._id, classId: classObjectId });
+                const existingEnroll = await enrollmentsCol.findOne({
+                  userId: (userDoc as any)._id,
+                  classId: classObjectId,
+                });
                 if (existingEnroll) {
                   // Heal legacy rows missing childId
                   if (!(existingEnroll as any).childId) {
-                    await enrollmentsCol.updateOne({ _id: (existingEnroll as any)._id }, { $set: { childId: (childDoc as any)._id } });
+                    await enrollmentsCol.updateOne(
+                      { _id: (existingEnroll as any)._id },
+                      { $set: { childId: (childDoc as any)._id } }
+                    );
                   }
                 } else {
                   await enrollmentsCol.insertOne({
@@ -152,7 +194,13 @@ export async function POST(req: Request): Promise<Response> {
           // No trial found; activate membership
           await db.collection("users").updateOne(
             { email },
-            { $set: { "membership.status": "active", "membership.joinedAt": new Date() } },
+            {
+              $set: {
+                "membership.status": "active",
+                "membership.joinedAt": new Date(),
+              },
+              $unset: { "flags.reactivationPending": "" }, // ✅ CLEAR FLAG HERE TOO
+            },
             { upsert: true }
           );
 
@@ -170,7 +218,12 @@ export async function POST(req: Request): Promise<Response> {
         const invoice = event.data.object as Stripe.Invoice;
         await db.collection("users").updateOne(
           { email },
-          { $set: { "membership.status": "active", "membership.lastPaymentDate": new Date() } }
+          {
+            $set: {
+              "membership.status": "active",
+              "membership.lastPaymentDate": new Date(),
+            },
+          }
         );
         await db.collection("membershipHistory").insertOne({
           email,
@@ -184,7 +237,9 @@ export async function POST(req: Request): Promise<Response> {
         });
         // lightweight payments record
         try {
-          const amountPounds = Math.round(Number(invoice.amount_paid || invoice.amount_due || 0) / 100);
+          const amountPounds = Math.round(
+            Number(invoice.amount_paid || invoice.amount_due || 0) / 100
+          );
           await db.collection("payments").insertOne({
             email,
             amount: amountPounds,
@@ -202,7 +257,12 @@ export async function POST(req: Request): Promise<Response> {
       case "customer.subscription.deleted": {
         await db.collection("users").updateOne(
           { email },
-          { $set: { "membership.status": "canceled", "membership.updatedAt": new Date() } }
+          {
+            $set: {
+              "membership.status": "canceled",
+              "membership.updatedAt": new Date(),
+            },
+          }
         );
         await db.collection("membershipHistory").insertOne({
           email,

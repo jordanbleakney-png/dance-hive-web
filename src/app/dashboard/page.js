@@ -17,7 +17,9 @@ export default function DashboardPage() {
       try {
         let roleFromStatus = role;
         if (session?.user?.email) {
-          const s = await fetch(`/api/users/status?email=${session.user.email}`);
+          const s = await fetch(
+            `/api/users/status?email=${session.user.email}`
+          );
           const sd = await s.json();
           if (sd?.role) {
             setRole(sd.role);
@@ -30,7 +32,8 @@ export default function DashboardPage() {
           setOverview(data);
           // Show welcome modal on every login until they upgrade
           const isConvertedCustomer =
-            roleFromStatus === "customer" && (!data?.membership || data?.membership?.status === "none");
+            roleFromStatus === "customer" &&
+            (!data?.membership || data?.membership?.status === "none");
           if (isConvertedCustomer) {
             setShowWelcome(true);
           }
@@ -45,37 +48,37 @@ export default function DashboardPage() {
     return (
       <DashboardLayout>
         <div className="flex justify-center items-center h-[60vh]">
-          <p className="text-gray-500 animate-pulse">Loading your dashboard...</p>
+          <p className="text-gray-500 animate-pulse">
+            Loading your dashboard...
+          </p>
         </div>
       </DashboardLayout>
     );
   }
 
   const childName = overview
-    ? [overview.child?.firstName, overview.child?.lastName].filter(Boolean).join(" ")
+    ? [overview.child?.firstName, overview.child?.lastName]
+        .filter(Boolean)
+        .join(" ")
     : "";
   const parentName = overview
-    ? [overview.parent?.firstName, overview.parent?.lastName].filter(Boolean).join(" ")
-    : "";
-  const addressLine = overview
-    ? [
-        overview.address?.houseNumber,
-        overview.address?.street,
-        overview.address?.city,
-        overview.address?.county,
-        overview.address?.postcode,
-      ]
+    ? [overview.parent?.firstName, overview.parent?.lastName]
         .filter(Boolean)
-        .join(", ")
+        .join(" ")
     : "";
   const addressLines = overview
     ? [
-        [overview.address?.houseNumber, overview.address?.street].filter(Boolean).join(" "),
+        [overview.address?.houseNumber, overview.address?.street]
+          .filter(Boolean)
+          .join(" "),
         overview.address?.city,
         overview.address?.county,
         overview.address?.postcode,
       ].filter(Boolean)
     : [];
+
+  // ✅ returning flag
+  const returning = Boolean(overview?.flags?.reactivationPending);
 
   const handleUpgrade = async () => {
     try {
@@ -97,18 +100,45 @@ export default function DashboardPage() {
         {showWelcome && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
             <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full mx-4 p-6 text-center">
-              <h2 className="font-bold text-xl mb-3">You made it, {session?.user?.name || "there"}!</h2>
-              <p className="text-gray-700 mb-4">
-                Your trial class was just the beginning &mdash; we'd love for you to stay with us!<br />
-                Get ready to become an official member of the Hive.
-              </p>
+              <h2 className="font-bold text-xl mb-3">
+                {returning ? (
+                  <>Welcome back, {session?.user?.name || "there"}!</>
+                ) : (
+                  <>You made it, {session?.user?.name || "there"}!</>
+                )}
+              </h2>
+
+              {returning ? (
+                <div className="text-gray-700 mb-4">
+                  <p>
+                    We’ve missed you at the Hive — we’d love to have you buzzing
+                    with us again!
+                  </p>
+                  <p>
+                    Pick up right where you left off and re-activate your
+                    membership.
+                  </p>
+                </div>
+              ) : (
+                <p className="text-gray-700 mb-4">
+                  Your trial class was just the beginning — we'd love for you to
+                  stay with us!
+                  <br />
+                  Get ready to become an official member of the Hive.
+                </p>
+              )}
+
               <div className="flex gap-3 justify-center">
                 <button
                   onClick={handleUpgrade}
                   disabled={upgrading}
                   className="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-5 py-2 rounded disabled:opacity-60"
                 >
-                  {upgrading ? "Starting checkout..." : "Upgrade to Member"}
+                  {upgrading
+                    ? "Starting checkout..."
+                    : overview?.flags?.reactivationPending
+                    ? "Re-activate Membership"
+                    : "Upgrade to Member"}
                 </button>
                 <button
                   onClick={() => setShowWelcome(false)}
@@ -120,14 +150,20 @@ export default function DashboardPage() {
             </div>
           </div>
         )}
-        <h1 className="text-2xl font-bold mb-3">Welcome back, {session?.user?.name || "User"}</h1>
+
+        <h1 className="text-2xl font-bold mb-3">
+          Welcome back, {session?.user?.name || "User"}
+        </h1>
         <p className="text-gray-600 mb-6">
           Your current role: <span className="font-medium">{role}</span>
         </p>
+
         {overview && (
           <div className="max-w-3xl mx-auto bg-white rounded-xl shadow p-6 text-left mb-6">
             <div className="flex items-center justify-between mb-3">
-              <h2 className="text-lg font-semibold">{(overview?.parent?.firstName || 'Parent') + ' Details'}</h2>
+              <h2 className="text-lg font-semibold">
+                {(overview?.parent?.firstName || "Parent") + " Details"}
+              </h2>
               <a
                 href="/dashboard/settings"
                 title="Edit details"
@@ -141,7 +177,7 @@ export default function DashboardPage() {
                   className="w-5 h-5"
                 >
                   <path d="M16.862 3.487a1.75 1.75 0 0 1 2.476 2.476l-10.3 10.3a3 3 0 0 1-1.272.754l-3.086.882a.75.75 0 0 1-.923-.923l.882-3.086a3 3 0 0 1 .754-1.272l10.3-10.3Z" />
-                  <path d="M5.25 19.5h13.5a.75.75 0 0 1 0 1.5H5.25a.75.75 0 0 1 0-1.5Z"/>
+                  <path d="M5.25 19.5h13.5a.75.75 0 0 1 0 1.5H5.25a.75.75 0 0 1 0-1.5Z" />
                 </svg>
                 <span className="sr-only">Edit</span>
               </a>
@@ -154,7 +190,9 @@ export default function DashboardPage() {
                 </div>
                 <div>
                   <div className="text-gray-500">Address details</div>
-                  <div className="font-medium whitespace-pre-line">{addressLines.length ? addressLines.join('\n') : "-"}</div>
+                  <div className="font-medium whitespace-pre-line">
+                    {addressLines.length ? addressLines.join("\n") : "-"}
+                  </div>
                 </div>
               </div>
               <div className="space-y-3">
@@ -164,44 +202,64 @@ export default function DashboardPage() {
                 </div>
                 <div>
                   <div className="text-gray-500">Email</div>
-                  <div className="font-medium break-words">{overview.email || "-"}</div>
+                  <div className="font-medium break-words">
+                    {overview.email || "-"}
+                  </div>
                 </div>
                 <div>
                   <div className="text-gray-500">Emergency contact details</div>
-                  <div className="font-medium">{[
-                    overview.emergencyContact?.name,
-                    overview.emergencyContact?.phone,
-                    overview.emergencyContact?.relation,
-                  ]
-                    .filter(Boolean)
-                    .join(" | ") || "Not provided"}</div>
+                  <div className="font-medium">
+                    {[
+                      overview.emergencyContact?.name,
+                      overview.emergencyContact?.phone,
+                      overview.emergencyContact?.relation,
+                    ]
+                      .filter(Boolean)
+                      .join(" | ") || "Not provided"}
+                  </div>
                 </div>
               </div>
             </div>
           </div>
         )}
-        
 
-        {overview && Array.isArray(overview.children) && overview.children.length > 0 && (
+        {overview &&
+          Array.isArray(overview.children) &&
+          overview.children.length > 0 &&
           overview.children.map((ch, idx) => (
-            <div key={idx} className="max-w-3xl mx-auto bg-white rounded-xl shadow p-6 text-left mb-6">
+            <div
+              key={idx}
+              className="max-w-3xl mx-auto bg-white rounded-xl shadow p-6 text-left mb-6"
+            >
               <div className="flex items-center justify-between mb-3">
-                <h2 className="text-lg font-semibold">{(ch?.firstName || 'Child') + ' Details'}</h2>
+                <h2 className="text-lg font-semibold">
+                  {(ch?.firstName || "Child") + " Details"}
+                </h2>
               </div>
               <div className="grid md:grid-cols-3 gap-4 text-sm">
                 <div>
                   <div className="text-gray-500">Child name</div>
-                  <div className="font-medium">{[ch.firstName, ch.lastName].filter(Boolean).join(" ")}</div>
+                  <div className="font-medium">
+                    {[ch.firstName, ch.lastName].filter(Boolean).join(" ")}
+                  </div>
                 </div>
                 {(ch.dob || overview.child?.dob) && (
                   <div>
                     <div className="text-gray-500">Date of birth</div>
-                    <div className="font-medium">{new Date(ch.dob || overview.child?.dob).toLocaleDateString()}</div>
+                    <div className="font-medium">
+                      {new Date(
+                        ch.dob || overview.child?.dob
+                      ).toLocaleDateString()}
+                    </div>
                   </div>
                 )}
-                <div className="md:col-span-3"> 
+                <div className="md:col-span-3">
                   <div className="text-gray-500">Medical information</div>
-                  <div className="font-medium whitespace-pre-wrap">{ch.medical || overview.medical || "No medical information on file. Please update in Settings."}</div>
+                  <div className="font-medium whitespace-pre-wrap">
+                    {ch.medical ||
+                      overview.medical ||
+                      "No medical information on file. Please update in Settings."}
+                  </div>
                 </div>
                 {/* Enrolled classes for this child */}
                 {(() => {
@@ -211,24 +269,47 @@ export default function DashboardPage() {
                   if (rows.length === 0) return null;
                   return (
                     <div className="md:col-span-3 mt-4">
-                      <h3 className="text-base font-semibold mb-2">Enrolled Classes</h3>
+                      <h3 className="text-base font-semibold mb-2">
+                        Enrolled Classes
+                      </h3>
                       <div className="rounded-lg border border-gray-200 overflow-hidden">
                         <table className="min-w-full text-sm">
                           <thead className="bg-gray-100">
                             <tr>
-                              <th className="px-4 py-2 border text-left">Class</th>
-                              <th className="px-4 py-2 border text-left">Schedule</th>
-                              <th className="px-4 py-2 border text-left">Teacher</th>
-                              <th className="px-4 py-2 border text-left">Status</th>
+                              <th className="px-4 py-2 border text-left">
+                                Class
+                              </th>
+                              <th className="px-4 py-2 border text-left">
+                                Schedule
+                              </th>
+                              <th className="px-4 py-2 border text-left">
+                                Teacher
+                              </th>
+                              <th className="px-4 py-2 border text-left">
+                                Status
+                              </th>
                             </tr>
                           </thead>
                           <tbody>
                             {rows.map((e) => (
-                              <tr key={String(e._id)} className="hover:bg-gray-50">
-                                <td className="px-4 py-2 border">{e.class?.name || ""}</td>
-                                <td className="px-4 py-2 border">{[e.class?.day, e.class?.time].filter(Boolean).join(" | ")}</td>
-                                <td className="px-4 py-2 border">{e.class?.instructor || "TBA"}</td>
-                                <td className="px-4 py-2 border">{e.status || "active"}</td>
+                              <tr
+                                key={String(e._id)}
+                                className="hover:bg-gray-50"
+                              >
+                                <td className="px-4 py-2 border">
+                                  {e.class?.name || ""}
+                                </td>
+                                <td className="px-4 py-2 border">
+                                  {[e.class?.day, e.class?.time]
+                                    .filter(Boolean)
+                                    .join(" | ")}
+                                </td>
+                                <td className="px-4 py-2 border">
+                                  {e.class?.instructor || "TBA"}
+                                </td>
+                                <td className="px-4 py-2 border">
+                                  {e.status || "active"}
+                                </td>
                               </tr>
                             ))}
                           </tbody>
@@ -239,67 +320,97 @@ export default function DashboardPage() {
                 })()}
               </div>
             </div>
-          ))
-        )}
-        {overview && (!Array.isArray(overview.children) || overview.children.length === 0) && (
-          <div className="max-w-3xl mx-auto bg-white rounded-xl shadow p-6 text-left mb-6">
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="text-lg font-semibold">{(overview?.child?.firstName || 'Child') + ' Details'}</h2>
-            </div>
-            <div className="grid md:grid-cols-3 gap-4 text-sm">
-              <div>
-                <div className="text-gray-500">Child name</div>
-                <div className="font-medium">{childName || "-"}</div>
+          ))}
+        {overview &&
+          (!Array.isArray(overview.children) ||
+            overview.children.length === 0) && (
+            <div className="max-w-3xl mx-auto bg-white rounded-xl shadow p-6 text-left mb-6">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-lg font-semibold">
+                  {(overview?.child?.firstName || "Child") + " Details"}
+                </h2>
               </div>
-              {overview.child?.age != null && (
+              <div className="grid md:grid-cols-3 gap-4 text-sm">
                 <div>
-                  <div className="text-gray-500">Age</div>
-                  <div className="font-medium">{overview.child.age}</div>
+                  <div className="text-gray-500">Child name</div>
+                  <div className="font-medium">{childName || "-"}</div>
                 </div>
-              )}
-              {overview.child?.dob && (
-                <div>
-                  <div className="text-gray-500">Date of birth</div>
-                  <div className="font-medium">{new Date(overview.child.dob).toLocaleDateString()}</div>
-                </div>
-              )}
-              <div className="md:col-span-3">
-                <div className="text-gray-500">Medical information</div>
-                <div className="font-medium whitespace-pre-wrap">
-                  {overview.medical || "No medical information on file. Please update in Settings."}
-                </div>
-              </div>
-              {/* Enrolled classes for this child (no children[] case) */}
-              {Array.isArray(overview.enrollments) && overview.enrollments.length > 0 && (
-                <div className="md:col-span-3 mt-4">
-                  <h3 className="text-base font-semibold mb-2">Enrolled Classes</h3>
-                  <div className="rounded-lg border border-gray-200 overflow-hidden">
-                    <table className="min-w-full text-sm">
-                      <thead className="bg-gray-100">
-                        <tr>
-                          <th className="px-4 py-2 border text-left">Class</th>
-                          <th className="px-4 py-2 border text-left">Schedule</th>
-                          <th className="px-4 py-2 border text-left">Teacher</th>
-                          <th className="px-4 py-2 border text-left">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {overview.enrollments.map((e) => (
-                          <tr key={String(e._id)} className="hover:bg-gray-50">
-                            <td className="px-4 py-2 border">{e.class?.name || ""}</td>
-                            <td className="px-4 py-2 border">{[e.class?.day, e.class?.time].filter(Boolean).join(" | ")}</td>
-                            <td className="px-4 py-2 border">{e.class?.instructor || "TBA"}</td>
-                            <td className="px-4 py-2 border">{e.status || "active"}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                {overview.child?.age != null && (
+                  <div>
+                    <div className="text-gray-500">Age</div>
+                    <div className="font-medium">{overview.child.age}</div>
+                  </div>
+                )}
+                {overview.child?.dob && (
+                  <div>
+                    <div className="text-gray-500">Date of birth</div>
+                    <div className="font-medium">
+                      {new Date(overview.child.dob).toLocaleDateString()}
+                    </div>
+                  </div>
+                )}
+                <div className="md:col-span-3">
+                  <div className="text-gray-500">Medical information</div>
+                  <div className="font-medium whitespace-pre-wrap">
+                    {overview.medical ||
+                      "No medical information on file. Please update in Settings."}
                   </div>
                 </div>
-              )}
+                {/* Enrolled classes for this child (no children[] case) */}
+                {Array.isArray(overview.enrollments) &&
+                  overview.enrollments.length > 0 && (
+                    <div className="md:col-span-3 mt-4">
+                      <h3 className="text-base font-semibold mb-2">
+                        Enrolled Classes
+                      </h3>
+                      <div className="rounded-lg border border-gray-200 overflow-hidden">
+                        <table className="min-w-full text-sm">
+                          <thead className="bg-gray-100">
+                            <tr>
+                              <th className="px-4 py-2 border text-left">
+                                Class
+                              </th>
+                              <th className="px-4 py-2 border text-left">
+                                Schedule
+                              </th>
+                              <th className="px-4 py-2 border text-left">
+                                Teacher
+                              </th>
+                              <th className="px-4 py-2 border text-left">
+                                Status
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {overview.enrollments.map((e) => (
+                              <tr
+                                key={String(e._id)}
+                                className="hover:bg-gray-50"
+                              >
+                                <td className="px-4 py-2 border">
+                                  {e.class?.name || ""}
+                                </td>
+                                <td className="px-4 py-2 border">
+                                  {[e.class?.day, e.class?.time]
+                                    .filter(Boolean)
+                                    .join(" | ")}
+                                </td>
+                                <td className="px-4 py-2 border">
+                                  {e.class?.instructor || "TBA"}
+                                </td>
+                                <td className="px-4 py-2 border">
+                                  {e.status || "active"}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+              </div>
             </div>
-          </div>
-        )}
+          )}
         {/* Enrolled Classes moved into each child card above */}
 
         {/* Recent Payments */}
@@ -319,18 +430,20 @@ export default function DashboardPage() {
                   {overview.payments.map((p, i) => (
                     <tr key={i} className="hover:bg-gray-50">
                       <td className="px-4 py-2 border">
-                        {new Date(p.createdAt || p.timestamp || Date.now()).toLocaleString()}
+                        {new Date(
+                          p.createdAt || p.timestamp || Date.now()
+                        ).toLocaleString()}
                       </td>
                       <td className="px-4 py-2 border">
-                        {
-                          new Intl.NumberFormat("en-GB", {
-                            style: "currency",
-                            currency: String(p.currency || "GBP").toUpperCase(),
-                            minimumFractionDigits: 0,
-                          }).format(Number(p.amount) || 0)
-                        }
+                        {new Intl.NumberFormat("en-GB", {
+                          style: "currency",
+                          currency: String(p.currency || "GBP").toUpperCase(),
+                          minimumFractionDigits: 0,
+                        }).format(Number(p.amount) || 0)}
                       </td>
-                      <td className="px-4 py-2 border">{p.payment_status || "paid"}</td>
+                      <td className="px-4 py-2 border">
+                        {p.payment_status || "paid"}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

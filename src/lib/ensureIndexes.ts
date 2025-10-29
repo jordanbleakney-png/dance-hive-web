@@ -47,6 +47,12 @@ export async function ensureIndexes() {
     await enrollments.createIndex({ classId: 1 });
     console.log("[db] 'enrollments' indexes verified");
 
+    // === PREVIOUS CUSTOMERS (archive) ===
+    const prev = db.collection("previousCustomers");
+    await prev.createIndex({ email: 1 }, { unique: true });
+    await prev.createIndex({ archivedAt: -1 });
+    console.log("[db] 'previousCustomers' indexes verified");
+
     // === PROCESSED EVENTS (idempotency) ===
     const processed = db.collection("processedEvents");
     const ttl = 14 * 24 * 60 * 60; // seconds
