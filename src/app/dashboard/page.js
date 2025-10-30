@@ -10,6 +10,8 @@ export default function DashboardPage() {
   const [role, setRole] = useState("customer");
   const [overview, setOverview] = useState(null);
   const [showWelcome, setShowWelcome] = useState(false);
+  const [showMemberWelcome, setShowMemberWelcome] = useState(false);
+  const [showMemberBanner, setShowMemberBanner] = useState(false);
   const [upgrading, setUpgrading] = useState(false);
 
   useEffect(() => {
@@ -36,6 +38,28 @@ export default function DashboardPage() {
             (!data?.membership || data?.membership?.status === "none");
           if (isConvertedCustomer) {
             setShowWelcome(true);
+          }
+
+          // If they are now a member, nudge them to update details via server-side flag
+          if (roleFromStatus === "member" && data?.membership?.status === "active") {
+            if (data?.flags?.memberWelcomePending) {
+              // If firstTime=1 is present, force showing the modal and clear any snooze
+              let firstTimeParam = false;
+              try {
+                const sp = new URLSearchParams(window.location.search);
+                firstTimeParam = sp.get("firstTime") === "1";
+              } catch {}
+              if (firstTimeParam) {
+                try { localStorage.removeItem('dh_member_modal_snooze'); } catch {}
+                setShowMemberWelcome(true);
+              } else {
+                // Otherwise, if the user snoozed previously, show a banner; else show modal
+                let snoozed = false;
+                try { snoozed = localStorage.getItem('dh_member_modal_snooze') === '1'; } catch {}
+                if (snoozed) setShowMemberBanner(true);
+                else setShowMemberWelcome(true);
+              }
+            }
           }
         }
       } finally {
@@ -97,6 +121,33 @@ export default function DashboardPage() {
   return (
     <DashboardLayout>
       <div className="max-w-3xl mx-auto text-center mt-12">
+        {showMemberWelcome && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+            <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full mx-4 p-6 text-center">
+              <h2 className="font-bold text-xl mb-3">Welcome to the Hive!</h2>
+              <p className="text-gray-700 mb-4">
+                We’re thrilled you’ve joined our buzzing community.
+                <br />
+                Please update your details to help us get everything ready for you and your little dancer
+              </p>
+              <div className="flex gap-3 justify-center">
+                <a
+                  href="/dashboard/settings"
+                  className="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-5 py-2 rounded"
+                  onClick={() => setShowMemberWelcome(false)}
+                >
+                  Update Details
+                </a>
+                <button
+                  onClick={() => { setShowMemberWelcome(false); setShowMemberBanner(true); try { localStorage.setItem('dh_member_modal_snooze','1'); } catch {} }}
+                  className="border border-gray-300 text-gray-700 px-5 py-2 rounded hover:bg-gray-50"
+                >
+                  Later
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
         {showWelcome && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
             <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full mx-4 p-6 text-center">
@@ -120,12 +171,21 @@ export default function DashboardPage() {
                   </p>
                 </div>
               ) : (
-                <p className="text-gray-700 mb-4">
-                  Your trial class was just the beginning — we'd love for you to
-                  stay with us!
-                  <br />
-                  Get ready to become an official member of the Hive.
-                </p>
+                <>
+                  <p className="text-gray-700 mb-4 hidden">
+                    Your trial class was just the beginning — we'd love for you
+                    to stay with us!
+                    <br />
+                    Get ready to become an official member of the Hive.
+                  </p>
+                  <p className="text-gray-700 mb-4">
+                    Your trial class was just the beginning
+                    <br />
+                    we'd love for you to stay with us!
+                    <br />
+                    Get ready to become an official member of the Hive.
+                  </p>
+                </>
               )}
 
               <div className="flex gap-3 justify-center">
@@ -147,6 +207,20 @@ export default function DashboardPage() {
                   Not now
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {showMemberBanner && (
+          <div className="mb-4 mx-auto max-w-2xl bg-yellow-50 border border-yellow-200 text-yellow-900 rounded-md px-4 py-3 text-sm">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="font-medium">Welcome to the Hive!</div>
+                <div>
+                  Please update your details so we can get everything ready for you and your little dancer.
+                </div>
+              </div>
+              <a href="/dashboard/settings" className="shrink-0 inline-block bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3 py-1.5 rounded">Update</a>
             </div>
           </div>
         )}

@@ -27,6 +27,14 @@ export default function AdminPage() {
           <h2 className="font-semibold mb-1">Classes</h2>
           <p className="text-gray-600 text-sm">Manage classes and students</p>
         </a>
+        <a href="/admin/follow-ups" className="block bg-white p-5 rounded-xl shadow hover:shadow-md transition">
+          <h2 className="font-semibold mb-1">Follow Ups</h2>
+          <p className="text-gray-600 text-sm">Trials marked attended</p>
+        </a>
+        <a href="/admin/cold-list" className="block bg-white p-5 rounded-xl shadow hover:shadow-md transition">
+          <h2 className="font-semibold mb-1">Cold List</h2>
+          <p className="text-gray-600 text-sm">Contacted follow-ups</p>
+        </a>
       </div>
     </DashboardLayout>
   );

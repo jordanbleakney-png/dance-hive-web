@@ -45,7 +45,8 @@ export async function GET() {
       const isMember = t.user?.role === "member" || m === "active";
       const isArchivedTrial = String(t.status || '').toLowerCase() === 'archived';
       const isArchivedUser = prevEmails.has(String(t.email || '').toLowerCase());
-      return !isMember && !isArchivedTrial && !isArchivedUser;
+      const isContacted = Boolean(t.contacted);
+      return !isMember && !isArchivedTrial && !isArchivedUser && !isContacted;
     });
 
     return NextResponse.json({ success: true, trials: filtered }, { status: 200 });

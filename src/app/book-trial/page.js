@@ -16,8 +16,11 @@ export default function BookTrialPage() {
     childLastName: "",
     childAge: "",
     classId: "",
+    trialDate: "",
   });
+  const [dates, setDates] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [showSuccess, setShowSuccess] = useState(false);
 
   // Fetch all available classes from MongoDB
   useEffect(() => {
@@ -53,6 +56,25 @@ export default function BookTrialPage() {
     setForm({ ...form, [e.target.name]: e.target.value });
   }
 
+  // When class changes, load the next 4 occurrences (dates)
+  useEffect(() => {
+    (async () => {
+      if (!form.classId) { setDates([]); setForm((p)=>({ ...p, trialDate: "" })); return; }
+      try {
+        const res = await fetch(`/api/classes/${form.classId}/occurrences?weeks=4`);
+        if (!res.ok) throw new Error("Failed to load dates");
+        const data = await res.json();
+        setDates(Array.isArray(data) ? data : []);
+        const first = (Array.isArray(data) && data[0]?.date) ? data[0].date : "";
+        setForm((prev) => ({ ...prev, trialDate: first }));
+      } catch (err) {
+        console.error(err);
+        setDates([]);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.classId]);
+
   // Handle submission
   async function handleSubmit(e) {
     e.preventDefault();
@@ -68,7 +90,7 @@ export default function BookTrialPage() {
 
       const data = await res.json();
       if (res.ok) {
-        toast.success("Trial booked successfully!");
+        setShowSuccess(true);
         setForm({
           parentFirstName: "",
           parentLastName: "",
@@ -78,6 +100,7 @@ export default function BookTrialPage() {
           childLastName: "",
           childAge: "",
           classId: "",
+          trialDate: "",
         });
       } else {
         toast.error(data.error || "Something went wrong.");
@@ -100,7 +123,7 @@ export default function BookTrialPage() {
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* Child Info */}
           <div>
-            <label className="block text-gray-700 mb-1">Childs Name</label>
+            <label className="block text-gray-700 mb-1">Child's First Name</label>
             <input
               type="text"
               name="childFirstName"
@@ -112,7 +135,7 @@ export default function BookTrialPage() {
           </div>
 
           <div>
-            <label className="block text-gray-700 mb-1">Child Last Name</label>
+            <label className="block text-gray-700 mb-1">Child's Surname</label>
             <input
               type="text"
               name="childLastName"
@@ -124,7 +147,7 @@ export default function BookTrialPage() {
           </div>
 
           <div>
-            <label className="block text-gray-700 mb-1">Childs Age</label>
+            <label className="block text-gray-700 mb-1">Child's Age</label>
             <input
               type="number"
               name="childAge"
@@ -137,7 +160,7 @@ export default function BookTrialPage() {
 
           {/* Parent Info */}
           <div>
-            <label className="block text-gray-700 mb-1">Parents Name</label>
+            <label className="block text-gray-700 mb-1">Parent's First Name</label>
             <input
               type="text"
               name="parentFirstName"
@@ -149,7 +172,7 @@ export default function BookTrialPage() {
           </div>
 
           <div>
-            <label className="block text-gray-700 mb-1">Parent Last Name</label>
+            <label className="block text-gray-700 mb-1">Parent's Surname</label>
             <input
               type="text"
               name="parentLastName"
@@ -161,7 +184,7 @@ export default function BookTrialPage() {
           </div>
 
           <div>
-            <label className="block text-gray-700 mb-1">Parents Email</label>
+            <label className="block text-gray-700 mb-1">Email</label>
             <input
               type="email"
               name="email"
@@ -173,7 +196,7 @@ export default function BookTrialPage() {
           </div>
 
           <div>
-            <label className="block text-gray-700 mb-1">Parents Phone</label>
+            <label className="block text-gray-700 mb-1">Phone</label>
             <input
               type="tel"
               name="parentPhone"
@@ -203,6 +226,24 @@ export default function BookTrialPage() {
             </select>
           </div>
 
+          {/* Select Date (appears after class selection) */}
+          <div>
+            <label className="block text-gray-700 mb-1">Select Date</label>
+            <select
+              name="trialDate"
+              value={form.trialDate}
+              onChange={handleChange}
+              required
+              disabled={!form.classId}
+              className="w-full border border-gray-300 rounded-md p-2 disabled:bg-gray-100"
+            >
+              <option value="">-- Choose a date --</option>
+              {dates.map((d) => (
+                <option key={d.date} value={d.date}>{d.label}</option>
+              ))}
+            </select>
+          </div>
+
           {/* Submit */}
           <button
             type="submit"
@@ -213,6 +254,29 @@ export default function BookTrialPage() {
           </button>
         </form>
       </div>
+
+      {showSuccess && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full mx-4 p-6 text-center">
+            <h2 className="font-bold text-xl mb-3 text-balance">
+              Thank you for booking your free trial
+              <br />
+              we can’t wait to meet you!
+            </h2>
+            <p className="text-gray-700 mb-6">
+              Keep an eye on your inbox for your class confirmation, along with all the details you’ll need about what to expect on the day.
+            </p>
+            <div className="flex justify-center">
+              <button
+                onClick={() => { setShowSuccess(false); window.location.href = "/"; }}
+                className="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-5 py-2 rounded"
+              >
+                Got it
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

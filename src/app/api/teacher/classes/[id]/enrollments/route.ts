@@ -5,7 +5,7 @@ import { ObjectId } from "mongodb";
 
 // GET /api/teacher/classes/[id]/enrollments
 // Returns enrollments for a class with basic user info
-export async function GET(_req: Request, { params }: { params: { id: string } }) {
+export async function GET(req: Request, { params }: { params: { id: string } }) {
   try {
     const session = await auth();
     if (!session?.user?.role || (session.user.role !== "teacher" && session.user.role !== "admin")) {
@@ -67,9 +67,21 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
       .toArray();
 
     // Also fetch trial bookings linked to this class by string classId
+    const url = new URL(req.url);
+    const selectedDate = url.searchParams.get('date'); // YYYY-MM-DD
+    const trialsQuery: any = { classId: String(classId) };
+    if (selectedDate) {
+      // Prefer server-side filtering for efficiency; include legacy records without trialDate
+      trialsQuery.$or = [
+        { trialDate: selectedDate },
+        { trialDate: { $exists: false } },
+        { trialDate: null },
+      ];
+    }
+
     const trialsRaw = await db
       .collection("trialBookings")
-      .find({ classId: String(classId) })
+      .find(trialsQuery)
       .project({
         parent: 1,
         child: 1,
@@ -78,6 +90,7 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
         email: 1,
         phone: 1,
         status: 1,
+        trialDate: 1,
         createdAt: 1,
       })
       .toArray();
@@ -97,8 +110,17 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
     const prevEmails = new Set(prevEmailsArr.map((d:any)=> String(d.email || '').toLowerCase()));
     const trials = trialsRaw.filter((t: any) => {
       const emailKey = String(t.email || '').toLowerCase();
-      const archivedTrial = String(t.status || '').toLowerCase() === 'archived';
-      return !memberEmails.has(emailKey) && !prevEmails.has(emailKey) && !archivedTrial;
+      const st = String(t.status || '').toLowerCase();
+      const archivedTrial = st === 'archived';
+      const attendedTrial = st === 'attended';
+      const absentTrial = st === 'absent';
+      if (memberEmails.has(emailKey) || prevEmails.has(emailKey) || archivedTrial || attendedTrial || absentTrial) return false;
+      if (selectedDate) {
+        if (t.trialDate) return String(t.trialDate).slice(0,10) === selectedDate;
+        // legacy: shown on all dates until backfilled
+        return true;
+      }
+      return true;
     });
 
     return NextResponse.json({ enrollments, trials });

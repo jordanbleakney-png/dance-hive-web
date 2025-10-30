@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useSession, signOut } from "next-auth/react";
+import { useSession } from "next-auth/react";
+import DashboardLayout from "@/components/DashboardLayout";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 
@@ -11,6 +12,7 @@ export default function AdminTrialsPage() {
   const [trials, setTrials] = useState([]);
   const [loading, setLoading] = useState(true);
   const [classMap, setClassMap] = useState({});
+  const [occMap, setOccMap] = useState({}); // { [classId]: [{date,label}] }
 
   // 🔒 Redirect unauthenticated users
   useEffect(() => {
@@ -29,6 +31,27 @@ export default function AdminTrialsPage() {
         if (!res.ok) throw new Error(data.error || "Failed to fetch trials");
 
         setTrials(data.trials);
+        // Warm occurrences cache for distinct classIds
+        const ids = Array.from(new Set((data.trials || []).map((t) => String(t.classId)).filter(Boolean)));
+        if (ids.length) {
+          Promise.all(
+            ids.map(async (cid) => {
+              try {
+                const r2 = await fetch(`/api/classes/${cid}/occurrences?weeks=4`);
+                const d2 = await r2.json();
+                return { cid, opts: Array.isArray(d2) ? d2 : [] };
+              } catch {
+                return { cid, opts: [] };
+              }
+            })
+          ).then(list => {
+            setOccMap((prev) => {
+              const next = { ...prev };
+              list.forEach(({ cid, opts }) => { next[cid] = opts; });
+              return next;
+            });
+          });
+        }
       } catch (err) {
         console.error(err);
         toast.error(err.message);
@@ -82,32 +105,27 @@ export default function AdminTrialsPage() {
     }
   }
 
-  if (status === "loading" || loading)
-    return <p className="p-10 text-center">Loading trial bookings...</p>;
+  async function updateTrialDate(id, classId, newDate) {
+    try {
+      const res = await fetch("/api/admin/trials/update-trial-date", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, trialDate: newDate }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to update trial date");
+      toast.success("Trial date updated");
+      setTrials((prev) => prev.map((t)=> t._id === id ? { ...t, trialDate: newDate } : t));
+    } catch (err) {
+      toast.error(err.message || "Failed to update date");
+    }
+  }
 
-  if (!Array.isArray(trials) || trials.length === 0)
-    return (
-      <div className="min-h-screen bg-gray-50 p-8">
-        <h1 className="text-3xl font-bold mb-6">🧾 Trial Bookings</h1>
-        <p>No trial bookings found.</p>
-      </div>
-    );
+  if (status === "loading" || loading)
+    return (<DashboardLayout allowedRoles={["admin"]}><p className="p-10 text-center">Loading trial bookings...</p></DashboardLayout>);
 
   return (
-    <div className="min-h-screen bg-gray-50 p-8">
-      {/* Header */}
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold">🧾 Trial Bookings</h1>
-        <button
-          onClick={() => signOut({ callbackUrl: "/login" })}
-          className="bg-red-500 text-white px-4 py-2 rounded-md hover:bg-red-600 transition"
-        >
-          Log Out
-        </button>
-      </div>
-
-      {/* Table */}
-      <div className="bg-white p-6 rounded-xl shadow-md overflow-x-auto">
+      <DashboardLayout allowedRoles={["admin"]}><div className="p-6"><h1 className="text-3xl font-bold mb-6">Trial Bookings</h1><div className="bg-white p-6 rounded-xl shadow-md overflow-x-auto">
         <table className="min-w-full border border-gray-200">
           <thead className="bg-gray-100">
             <tr>
@@ -118,6 +136,7 @@ export default function AdminTrialsPage() {
               <th className="px-4 py-2 border">Email</th>
               <th className="px-4 py-2 border">Phone</th>
               <th className="px-4 py-2 border">Status</th>
+              <th className="px-4 py-2 border">Trial Date</th>
               <th className="px-4 py-2 border">Actions</th>
               <th className="px-4 py-2 border">Date</th>
             </tr>
@@ -157,6 +176,30 @@ export default function AdminTrialsPage() {
                   </span>
                 </td>
 
+                {/* Trial Date */}
+                <td className="px-4 py-2 border text-sm">
+                  <select
+                    className="border rounded-md p-1"
+                    value={(t.trialDate ? String(t.trialDate).slice(0,10) : "")}
+                    onChange={(e) => updateTrialDate(t._id, String(t.classId), e.target.value)}
+                    onFocus={async () => {
+                      const cid = String(t.classId);
+                      if (!occMap[cid]) {
+                        try {
+                          const r2 = await fetch(`/api/classes/${cid}/occurrences?weeks=4`);
+                          const d2 = await r2.json();
+                          setOccMap((p)=> ({ ...p, [cid]: Array.isArray(d2) ? d2 : [] }));
+                        } catch {}
+                      }
+                    }}
+                  >
+                    <option value="">-- Choose a date --</option>
+                    {(occMap[String(t.classId)] || []).map((opt) => (
+                      <option key={opt.date} value={opt.date}>{opt.label}</option>
+                    ))}
+                  </select>
+                </td>
+
                 {/* Actions */}
                 <td className="px-4 py-2 border text-center">
                   <select
@@ -166,18 +209,26 @@ export default function AdminTrialsPage() {
                   >
                     <option value="pending">Pending</option>
                     <option value="attended">Attended</option>
+                    <option value="absent">Absent</option>
                     <option value="converted">Converted</option>
                   </select>
                 </td>
 
                 <td className="px-4 py-2 border text-sm">
-                  {new Date(t.createdAt).toLocaleString()}
+                  {t.createdAt ? new Date(t.createdAt).toLocaleString() : ""}
                 </td>
               </tr>
             ))}
+            {Array.isArray(trials) && trials.length === 0 && (
+              <tr>
+                <td className="px-4 py-6 text-center text-gray-500" colSpan={10}>
+                  No trial bookings found.
+                </td>
+              </tr>
+            )}
           </tbody>
-        </table>
-      </div>
-    </div>
+        </table></div></div></DashboardLayout>
   );
 }
+
+

@@ -57,7 +57,10 @@ export async function PATCH(req: Request) {
     const db = await getDb();
     await db.collection("users").updateOne(
       { email: session.user.email },
-      { $set: { ...allowed, updatedAt: new Date(), onboardingComplete: true } }
+      { 
+        $set: { ...allowed, updatedAt: new Date(), onboardingComplete: true },
+        $unset: { 'flags.memberWelcomePending': '' }
+      }
     );
 
     // If medical provided, propagate to child documents for this user so admin UI shows it

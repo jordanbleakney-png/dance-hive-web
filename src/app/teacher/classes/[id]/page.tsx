@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import DashboardLayout from "@/components/DashboardLayout";
 
@@ -59,7 +59,7 @@ export default function TeacherClassRegisterPage() {
   async function load() {
     try {
       const [enrRes, clsRes] = await Promise.all([
-        fetch(`/api/teacher/classes/${id}/enrollments`),
+        fetch(`/api/teacher/classes/${id}/enrollments?date=${encodeURIComponent(selectedDate)}`),
         fetch(`/api/classes/${id}`),
       ]);
       if (!enrRes.ok) throw new Error("Failed to load enrollments");
@@ -76,14 +76,16 @@ export default function TeacherClassRegisterPage() {
     if (id) {
       load();
     }
-  }, [id]);
+  }, [id, selectedDate]);
 
   // When class meta loads, if selectedDate is not a class day, snap to next occurrence
+  const initialized = useRef(false);
   useEffect(() => {
     if (!cls) return;
-    // Snap initial date to this week's occurrence of the class day
+    if (initialized.current) return; // only set once on initial load
     const thisWeek = occurrenceThisWeek(new Date(), cls?.day).toISOString().slice(0, 10);
-    setSelectedDate(thisWeek);
+    setSelectedDate((prev) => prev || thisWeek);
+    initialized.current = true;
   }, [cls]);
 
   const markAttendance = async (userId: string, childId?: string) => {
@@ -125,6 +127,20 @@ export default function TeacherClassRegisterPage() {
       await load();
     } catch (e) {
       alert("Failed to mark trial attendance");
+    }
+  };
+
+  const markTrialAbsent = async (trialId: string) => {
+    try {
+      const res = await fetch(`/api/teacher/classes/${id}/trial-absent`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ trialId }),
+      });
+      if (!res.ok) throw new Error("Failed to mark trial absent");
+      await load();
+    } catch (e) {
+      alert("Failed to mark trial absent");
     }
   };
 
@@ -274,6 +290,8 @@ export default function TeacherClassRegisterPage() {
                               try {
                                 if (val === 'attended') {
                                   await markTrialAttendance(String(t._id));
+                                } else if (val === 'absent') {
+                                  await markTrialAbsent(String(t._id));
                                 } else if (val === 'converted') {
                                   const res = await fetch(`/api/teacher/classes/${id}/convert-trial`, {
                                     method: 'POST',
@@ -291,7 +309,8 @@ export default function TeacherClassRegisterPage() {
                             }}
                           >
                             <option value="" disabled>Select action</option>
-                            <option value="attended">Mark Attended</option>
+                            <option value="attended">Attended</option>
+                            <option value="absent">Absent</option>
                             <option value="converted">Convert</option>
                           </select>
                         )}

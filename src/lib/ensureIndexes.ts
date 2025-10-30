@@ -18,6 +18,11 @@ export async function ensureIndexes() {
     await trials.createIndex({ email: 1 });
     await trials.createIndex({ createdAt: 1 });
     await trials.createIndex({ convertedToMember: 1 });
+    await trials.createIndex({ classId: 1, trialDate: 1 });
+    // Optional de-dup prevention per class/date per email (not unique across null trialDate)
+    try {
+      await trials.createIndex({ email: 1, classId: 1, trialDate: 1 }, { unique: true, partialFilterExpression: { trialDate: { $type: "string" } } as any });
+    } catch {}
     console.log("[db] 'trialBookings' indexes verified");
 
     // === MEMBERSHIP HISTORY COLLECTION ===

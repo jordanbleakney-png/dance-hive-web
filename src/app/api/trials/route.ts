@@ -13,6 +13,7 @@ const trialSchema = z.object({
   email: z.string().email(),
   parentPhone: z.string().min(8).optional(),
   classId: z.string().min(2),
+  trialDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), // YYYY-MM-DD
 });
 
 export async function POST(req: Request) {
@@ -29,6 +30,26 @@ export async function POST(req: Request) {
       );
     }
 
+    // Optional trialDate validation against class weekday and 28-day horizon
+    let trialDate: string | null = null;
+    if (parsed.trialDate) {
+      trialDate = parsed.trialDate;
+      const cls = await (await getDb()).collection("classes").findOne({ _id: new ObjectId(classId) });
+      if (!cls) return NextResponse.json({ success: false, message: "Class not found" }, { status: 404 });
+      const weekday = String((cls as any).day || "");
+      const dayToIndex: Record<string, number> = { Sunday:0, Monday:1, Tuesday:2, Wednesday:3, Thursday:4, Friday:5, Saturday:6 };
+      const d = new Date(trialDate);
+      d.setHours(0,0,0,0);
+      const today = new Date(); today.setHours(0,0,0,0);
+      const max = new Date(today); max.setDate(max.getDate() + 28);
+      if (d < today || d > max) {
+        return NextResponse.json({ success: false, message: "Selected date is out of range" }, { status: 400 });
+      }
+      if (weekday && d.getDay() !== dayToIndex[weekday]) {
+        return NextResponse.json({ success: false, message: "Selected date does not match class day" }, { status: 400 });
+      }
+    }
+
     const record = {
       parent: { firstName: parsed.parentFirstName, lastName: parsed.parentLastName },
       child: { firstName: parsed.childFirstName, lastName: parsed.childLastName },
@@ -36,13 +57,14 @@ export async function POST(req: Request) {
       email: parsed.email,
       phone: parsed.parentPhone,
       classId,
+      ...(trialDate ? { trialDate } : {}),
     };
 
     const db = await getDb();
 
     const existing = await db
       .collection("trialBookings")
-      .findOne({ email: record.email, classId: record.classId });
+      .findOne({ email: record.email, classId: record.classId, ...(trialDate ? { trialDate } : {}) });
 
     if (existing) {
       return NextResponse.json(

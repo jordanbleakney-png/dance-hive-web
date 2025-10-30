@@ -54,7 +54,7 @@ export async function POST(req: Request): Promise<Response> {
             .collection("trialBookings")
             .updateOne(
               { email },
-              { $set: { status: "converted", convertedAt: new Date() } }
+              { $set:{ status: "converted", convertedAt: new Date() } }
             );
 
           // Build normalized names/phone
@@ -88,12 +88,12 @@ export async function POST(req: Request): Promise<Response> {
               $set: {
                 phone,
                 role: "member",
-                membership: {
+                membership:{
                   status: "active",
                   plan: "monthly",
                   joinedAt: new Date(),
                   classId: (trial as any)?.classId || null,
-                },
+                }, "flags.memberWelcomePending": true,
                 parent: {
                   firstName: parentFirstName,
                   lastName: parentLastName,
@@ -197,7 +197,7 @@ export async function POST(req: Request): Promise<Response> {
             {
               $set: {
                 "membership.status": "active",
-                "membership.joinedAt": new Date(),
+                "membership.joinedAt": new Date(), "flags.memberWelcomePending": true,
               },
               $unset: { "flags.reactivationPending": "" }, // ✅ CLEAR FLAG HERE TOO
             },
@@ -282,3 +282,6 @@ export async function POST(req: Request): Promise<Response> {
     return new NextResponse("Internal Server Error", { status: 500 });
   }
 }
+
+
+

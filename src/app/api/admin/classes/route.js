@@ -40,3 +40,36 @@ export async function GET() {
   }
 }
 
+export async function POST(req) {
+  const session = await auth();
+  if (!session || session.user.role !== "admin") {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+  }
+  try {
+    const body = await req.json();
+    const name = String(body.name || "").trim();
+    const style = String(body.style || "").trim();
+    const instructor = String(body.instructor || "").trim();
+    const day = String(body.day || "").trim();
+    const time = String(body.time || "").trim();
+    const capacity = Number(body.capacity || 0);
+    if (!name || !day || !time) {
+      return new Response(JSON.stringify({ error: "Missing required fields (name, day, time)" }), { status: 400 });
+    }
+    const db = await getDb();
+    const doc = {
+      name,
+      style,
+      instructor,
+      day,
+      time,
+      capacity: Number.isFinite(capacity) && capacity > 0 ? capacity : 0,
+      createdAt: new Date(),
+    };
+    const ins = await db.collection("classes").insertOne(doc);
+    return new Response(JSON.stringify({ success: true, _id: String(ins.insertedId) }), { status: 201 });
+  } catch (error) {
+    console.error("[admin/classes] POST error:", error);
+    return new Response(JSON.stringify({ error: "Failed to create class" }), { status: 500 });
+  }
+}

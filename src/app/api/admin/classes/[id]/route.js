@@ -1,4 +1,4 @@
-﻿import { auth } from "@/app/api/auth/[...nextauth]/route";
+import { auth } from "@/app/api/auth/[...nextauth]/route";
 import { getDb } from "@/lib/dbConnect";
 import { ObjectId } from "mongodb";
 
@@ -23,7 +23,6 @@ export async function GET(_, context) {
     return new Response(JSON.stringify({ error: "Class not found" }), { status: 404 });
   }
 
-  // Join enrollments with users and children so each row shows the correct child
   const pipeline = [
     { $match: { classId: classObjectId } },
     { $lookup: { from: "users", localField: "userId", foreignField: "_id", as: "user" } },
@@ -77,3 +76,22 @@ export async function GET(_, context) {
 
   return new Response(JSON.stringify({ classInfo, students }), { status: 200 });
 }
+
+export async function DELETE(_, context) {
+  const session = await auth();
+  if (!session || session.user.role !== "admin") {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+  }
+  const { id } = context.params;
+  const db = await getDb();
+  let classObjectId;
+  try { classObjectId = new ObjectId(id); } catch { return new Response(JSON.stringify({ error: "Invalid class id" }), { status: 400 }); }
+
+  const enrolledCount = await db.collection('enrollments').countDocuments({ classId: classObjectId });
+  if (enrolledCount > 0) {
+    return new Response(JSON.stringify({ error: "Cannot delete: class has enrollments" }), { status: 409 });
+  }
+  await db.collection('classes').deleteOne({ _id: classObjectId });
+  return new Response(JSON.stringify({ success: true }), { status: 200 });
+}
+
