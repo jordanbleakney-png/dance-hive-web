@@ -184,3 +184,33 @@ Ops/failure handling
 - Payment failure â†’ keep membership pending and surface in admin payments
 - Retries: GC will retry; webhook handler must be idempotent
 
+---
+
+## GoCardless: Current Implementation (2025‑11)
+
+- Redirect Flow → Mandate → Subscription
+  - Creates a monthly subscription billed on the 1st of each month.
+  - `start_date` is set to the first of the next month; GC automatically shifts weekends/bank holidays to the next working day.
+  - Amount derived from `enrollmentCount` using a simple tier (1=£30, 2=£55, ≥3=£75 cap).
+- Pro‑rata one‑off payment
+  - Computation: `perClass = ceil(monthly/4)` × `classesLeftThisMonth` (weekday‑based from the latest converted trial), capped at the monthly fee.
+  - Created via GC Payments API with ≤3 metadata keys: `{ email, reason: 'prorata', month: 'YYYY‑MM' }`. Omit `reference` in sandbox.
+  - Seed a `payments` row with `status: 'pending_submission'` and record `payment_id` if returned; webhook confirms later.
+- Idempotency
+  - Subscription: `sub_create:<userId>:<redirect_flow_id>`
+  - Pro‑rata: `prorata:<userId>:<YYYY‑MM>:<redirect_flow_id>`
+- Webhook `/api/webhook/gocardless`
+  - HMAC verified; idempotent via `processedEvents`.
+  - `subscriptions.created|activated`: sets `role=member`, `membership.status=active`, stores GC IDs, sets `flags.memberWelcomePending=true`, auto‑enrols child from latest converted trial (capacity checked).
+  - `payments.confirmed`: trims `payment_id`, enriches via GC (amount/currency/metadata), falls back to seeded payment for `email` if needed, and upserts the `payments` row by `payment_id` → sets `status=confirmed`, `payment_status=confirmed`, `paidAt`, `updatedAt`, and updates `users.membership.lastPaymentDate`.
+  - `payments.failed`: currently marks `membership.status=pending` (optional: upsert pending row to `failed`).
+- UX smoothing
+  - Success page performs a short confirm loop to avoid landing on a stale “customer” view, then hard redirects to `/dashboard?firstTime=1`.
+  - Dashboard does a one‑time quick re‑fetch when `firstTime=1` so users don’t need to manually refresh.
+- UI status
+  - Dashboard and Admin use normalized status `payment_status ?? status` so “pending submission” vs “confirmed” display correctly.
+- Sandbox specifics
+  - No custom `payments.reference`; max 3 metadata keys.
+  - Occasional `409/422` on redirect flow completion (double‑submit in dev) — first success is sufficient.
+  - Atlas `collMod` for TTL index may be denied; we log and continue (non‑fatal).
+
