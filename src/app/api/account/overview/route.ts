@@ -25,6 +25,7 @@ export async function GET() {
           email: 1,
           flags: 1, // add this
         },
+        sort: { updatedAt: -1, _id: -1 },
       }
     );
 
@@ -71,7 +72,7 @@ export async function GET() {
       .toArray();
 
     // Recent payments (last 5)
-    const payments = await db
+    const rawPayments = await db
       .collection("payments")
       .find(
         { email: session.user.email.toLowerCase() },
@@ -80,6 +81,7 @@ export async function GET() {
             amount: 1,
             currency: 1,
             payment_status: 1,
+            status: 1,
             createdAt: 1,
             timestamp: 1,
           },
@@ -88,6 +90,11 @@ export async function GET() {
       .sort({ createdAt: -1 })
       .limit(5)
       .toArray();
+    const payments = rawPayments.map((p: any) => ({
+      ...p,
+      // Normalize status so UI can rely on a single field
+      payment_status: p?.payment_status ?? p?.status ?? null,
+    }));
 
     return NextResponse.json({
       parent: (user as any).parent || null,
@@ -111,3 +118,6 @@ export async function GET() {
     );
   }
 }
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const fetchCache = "force-no-store";

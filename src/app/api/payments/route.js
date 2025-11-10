@@ -13,7 +13,7 @@ export async function GET() {
     // Load payments first
     const raw = await db
       .collection("payments")
-      .find({}, { projection: { email: 1, amount: 1, currency: 1, createdAt: 1 } })
+      .find({}, { projection: { email: 1, amount: 1, currency: 1, createdAt: 1, status: 1, payment_status: 1 } })
       .sort({ createdAt: -1 })
       .toArray();
 
@@ -59,7 +59,7 @@ export async function GET() {
         const local = String(p.email).split("@")[0] || "";
         parentName = local ? local.charAt(0).toUpperCase() + local.slice(1) : "";
       }
-      return { ...p, parentName };
+      return { ...p, parentName, status: p.status || p.payment_status || null };
     });
 
     return new Response(JSON.stringify({ payments }), { status: 200 });

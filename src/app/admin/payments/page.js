@@ -36,6 +36,7 @@ export default function AdminPaymentsPage() {
                 <th className="px-4 py-2 border text-left">Parent Name</th>
                 <th className="px-4 py-2 border text-left">Email</th>
                 <th className="px-4 py-2 border text-left">Amount</th>
+                <th className="px-4 py-2 border text-left">Status</th>
                 <th className="px-4 py-2 border text-left">Date</th>
               </tr>
             </thead>
@@ -45,6 +46,7 @@ export default function AdminPaymentsPage() {
                   <td className="px-4 py-2 border">{p.parentName || ""}</td>
                   <td className="px-4 py-2 border">{p.email}</td>
                   <td className="px-4 py-2 border">{new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP', minimumFractionDigits: 0 }).format(Number(p.amount) || 0)}</td>
+                  <td className="px-4 py-2 border">{(p.status || '').replace('_', ' ') || '—'}</td>
                   <td className="px-4 py-2 border">{new Date(p.createdAt || p.timestamp || Date.now()).toLocaleString()}</td>
                 </tr>
               ))}

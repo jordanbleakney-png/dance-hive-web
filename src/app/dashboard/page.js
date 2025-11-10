@@ -13,30 +13,46 @@ export default function DashboardPage() {
   const [showMemberWelcome, setShowMemberWelcome] = useState(false);
   const [showMemberBanner, setShowMemberBanner] = useState(false);
   const [upgrading, setUpgrading] = useState(false);
+  const [isFirstTime, setIsFirstTime] = useState(false);
 
   useEffect(() => {
     (async () => {
       try {
         let roleFromStatus = role;
-        if (session?.user?.email) {
-          const s = await fetch(
-            `/api/users/status?email=${session.user.email}`
-          );
-          const sd = await s.json();
-          if (sd?.role) {
-            setRole(sd.role);
-            roleFromStatus = sd.role;
-          }
+        // Detect first-time redirect state from success page
+        let firstTimeParam = false;
+        try {
+          const sp = new URLSearchParams(window.location.search);
+          firstTimeParam = sp.get("firstTime") === "1";
+          setIsFirstTime(firstTimeParam);
+        } catch {}
+
+        // Fetch status and overview in parallel for faster paint
+        const statusPromise = session?.user?.email
+          ? fetch(
+              `/api/users/status?email=${encodeURIComponent(session.user.email)}&_t=${Date.now()}`,
+              { cache: "no-store" }
+            )
+              .then((r) => (r.ok ? r.json() : null))
+              .catch(() => null)
+          : Promise.resolve(null);
+        const overviewPromise = fetch(`/api/account/overview?_t=${Date.now()}`, { cache: "no-store" })
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null);
+
+        const [sd, data] = await Promise.all([statusPromise, overviewPromise]);
+
+        if (sd?.role) {
+          setRole(sd.role);
+          roleFromStatus = sd.role;
         }
-        const r = await fetch("/api/account/overview");
-        if (r.ok) {
-          const data = await r.json();
+        if (data) {
           setOverview(data);
           // Show welcome modal on every login until they upgrade
           const isConvertedCustomer =
             roleFromStatus === "customer" &&
             (!data?.membership || data?.membership?.status === "none");
-          if (isConvertedCustomer) {
+          if (!firstTimeParam && isConvertedCustomer) {
             setShowWelcome(true);
           }
 
@@ -44,11 +60,6 @@ export default function DashboardPage() {
           if (roleFromStatus === "member" && data?.membership?.status === "active") {
             if (data?.flags?.memberWelcomePending) {
               // If firstTime=1 is present, force showing the modal and clear any snooze
-              let firstTimeParam = false;
-              try {
-                const sp = new URLSearchParams(window.location.search);
-                firstTimeParam = sp.get("firstTime") === "1";
-              } catch {}
               if (firstTimeParam) {
                 try { localStorage.removeItem('dh_member_modal_snooze'); } catch {}
                 setShowMemberWelcome(true);
@@ -61,8 +72,36 @@ export default function DashboardPage() {
               }
             }
           }
+          // If we just returned from checkout and still look like a customer,
+          // do a single quick re-fetch shortly after initial paint to catch any
+          // last-moment DB write visibility. This is invisible to the user.
+          if (firstTimeParam && roleFromStatus === "customer") {
+            setTimeout(async () => {
+              try {
+                const email = session?.user?.email || "";
+                if (!email) return;
+                const s2 = await fetch(`/api/users/status?email=${encodeURIComponent(email)}&_t=${Date.now()}`, { cache: "no-store" });
+                const sd2 = s2.ok ? await s2.json() : null;
+                const r2 = await fetch(`/api/account/overview?_t=${Date.now()}`, { cache: "no-store" });
+                const ov2 = r2.ok ? await r2.json() : null;
+                if ((sd2?.role === "member") || (ov2?.membership?.status === "active")) {
+                  setRole("member");
+                  setOverview(ov2 || data);
+                  if (ov2?.flags?.memberWelcomePending) {
+                    try { localStorage.removeItem('dh_member_modal_snooze'); } catch {}
+                    setShowWelcome(false);
+                    setShowMemberBanner(false);
+                    setShowMemberWelcome(true);
+                  }
+                }
+              } catch {}
+            }, 400);
+          }
         }
+        // Drop loader now; content will be updated by background polling if needed
+        setLoading(false);
       } finally {
+        // ensure we never get stuck loading
         setLoading(false);
       }
     })();
@@ -121,6 +160,7 @@ export default function DashboardPage() {
   return (
     <DashboardLayout>
       <div className="max-w-3xl mx-auto text-center mt-12">
+        {/* no banner */}
         {showMemberWelcome && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
             <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full mx-4 p-6 text-center">
@@ -516,7 +556,7 @@ export default function DashboardPage() {
                         }).format(Number(p.amount) || 0)}
                       </td>
                       <td className="px-4 py-2 border">
-                        {p.payment_status || "paid"}
+                        {String(p.payment_status || p.status || '').replace('_',' ') || 'pending'}
                       </td>
                     </tr>
                   ))}
@@ -529,3 +569,4 @@ export default function DashboardPage() {
     </DashboardLayout>
   );
 }
+

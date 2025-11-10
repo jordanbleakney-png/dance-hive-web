@@ -11,7 +11,7 @@ const nextConfig = {
     // Allow both local & remote image optimization
     remotePatterns: [
       { protocol: "https", hostname: "res.cloudinary.com" }, // Cloudinary
-      { protocol: "https", hostname: "files.stripe.com" }, // Stripe-hosted images
+      // { protocol: "https", hostname: "files.stripe.com" }, // removed: Stripe-hosted images
     ],
   },
 
@@ -22,4 +22,3 @@ const nextConfig = {
 };
 
 export default nextConfig;
-

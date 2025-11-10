@@ -14,6 +14,9 @@ declare global {
   // allow global var for hot reloads in dev
   // eslint-disable-next-line no-var
   var _mongoClientPromise: Promise<MongoClient> | undefined;
+  // track whether ensureIndexes has run across route workers in dev
+  // eslint-disable-next-line no-var
+  var _indexesEnsured: boolean | undefined;
 }
 
 if (process.env.NODE_ENV === "development") {
@@ -44,8 +47,10 @@ export async function getDb() {
 let hasEnsuredIndexes = false;
 
 async function runEnsureIndexes() {
-  if (hasEnsuredIndexes) return;
+  if (hasEnsuredIndexes || global._indexesEnsured) return;
+  // Optimistically mark as ensured to avoid concurrent duplicate work in dev
   hasEnsuredIndexes = true;
+  global._indexesEnsured = true;
   try {
     console.log("[db] Importing ensureIndexes.ts...");
     const { ensureIndexes } = await import("./ensureIndexes");
@@ -54,6 +59,9 @@ async function runEnsureIndexes() {
     console.log("[db] Index verification complete.");
   } catch (err) {
     console.error("[db] Failed to ensure indexes:", err);
+    // Allow another attempt later if this one failed
+    hasEnsuredIndexes = false;
+    global._indexesEnsured = false;
   }
 }
 

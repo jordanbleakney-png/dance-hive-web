@@ -23,6 +23,7 @@ export async function GET(req: Request) {
           membership: 1,
           onboardingComplete: 1,
         },
+        sort: { updatedAt: -1, _id: -1 },
       }
     );
 
@@ -46,3 +47,6 @@ export async function GET(req: Request) {
   }
 }
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const fetchCache = "force-no-store";
