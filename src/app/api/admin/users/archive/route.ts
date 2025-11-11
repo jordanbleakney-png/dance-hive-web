@@ -35,6 +35,48 @@ export async function POST(req: Request) {
       db.collection("enrollments").find({ userId }).toArray(),
     ]);
 
+    // Best-effort: cancel GoCardless subscription/mandate before removal
+    let gcCancel: any = { subscription: null, mandate: null };
+    try {
+      const subId = user?.membership?.gocardless_subscription_id;
+      const mandateId = user?.membership?.gocardless_mandate_id;
+      const token = process.env.GOCARDLESS_ACCESS_TOKEN || "";
+      if (token && (subId || mandateId)) {
+        const base = process.env.GOCARDLESS_ENV === "live"
+          ? "https://api.gocardless.com"
+          : "https://api-sandbox.gocardless.com";
+        const headers: Record<string, string> = {
+          Authorization: `Bearer ${token}`,
+          "GoCardless-Version": "2015-07-06",
+          "Content-Type": "application/json",
+        };
+        if (subId) {
+          try {
+            const r = await fetch(`${base}/subscriptions/${subId}/actions/cancel`, {
+              method: "POST",
+              headers: { ...headers, "Idempotency-Key": `admin-archive-cancel-sub:${String(userId)}` },
+              body: JSON.stringify({}),
+            });
+            gcCancel.subscription = r.status;
+          } catch (e) {
+            gcCancel.subscription = "error";
+          }
+        }
+        if (mandateId) {
+          try {
+            const r = await fetch(`${base}/mandates/${mandateId}/actions/cancel`, {
+              method: "POST",
+              headers: { ...headers, "Idempotency-Key": `admin-archive-cancel-mandate:${String(userId)}` },
+              body: JSON.stringify({}),
+            });
+            gcCancel.mandate = r.status;
+          } catch (e) {
+            gcCancel.mandate = "error";
+          }
+        }
+      }
+    } catch {}
+
     // Write snapshot to previousCustomers (upsert by email)
     const archiveDoc: any = {
       email: String(user.email || "").toLowerCase(),
@@ -46,6 +88,7 @@ export async function POST(req: Request) {
         children,
         enrollments,
       },
+      gcCancellation: gcCancel,
     };
 
     await db.collection("previousCustomers").updateOne(
@@ -74,6 +117,7 @@ export async function POST(req: Request) {
         children: delChildren.deletedCount,
         users: delUser.deletedCount,
       },
+      gcCancellation: gcCancel,
     });
   } catch (err) {
     console.error("[admin/users/archive] error:", err);

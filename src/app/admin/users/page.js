@@ -1169,7 +1169,7 @@ export default function AdminUsersPage() {
                                 {
                                   style: "currency",
                                   currency,
-                                  minimumFractionDigits: 0,
+                                  minimumFractionDigits: 2, maximumFractionDigits: 2,
                                 }
                               ).format(amount);
                               const dateText = new Date(
@@ -1221,6 +1221,7 @@ export default function AdminUsersPage() {
     </DashboardLayout>
   );
 }
+
 
 
 

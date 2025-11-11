@@ -30,13 +30,18 @@ export default function DashboardPage() {
         // Fetch status and overview in parallel for faster paint
         const statusPromise = session?.user?.email
           ? fetch(
-              `/api/users/status?email=${encodeURIComponent(session.user.email)}&_t=${Date.now()}`,
+              `/api/users/status?email=${encodeURIComponent(
+                session.user.email
+              )}&_t=${Date.now()}`,
               { cache: "no-store" }
             )
               .then((r) => (r.ok ? r.json() : null))
               .catch(() => null)
           : Promise.resolve(null);
-        const overviewPromise = fetch(`/api/account/overview?_t=${Date.now()}`, { cache: "no-store" })
+        const overviewPromise = fetch(
+          `/api/account/overview?_t=${Date.now()}`,
+          { cache: "no-store" }
+        )
           .then((r) => (r.ok ? r.json() : null))
           .catch(() => null);
 
@@ -57,16 +62,24 @@ export default function DashboardPage() {
           }
 
           // If they are now a member, nudge them to update details via server-side flag
-          if (roleFromStatus === "member" && data?.membership?.status === "active") {
+          if (
+            roleFromStatus === "member" &&
+            data?.membership?.status === "active"
+          ) {
             if (data?.flags?.memberWelcomePending) {
               // If firstTime=1 is present, force showing the modal and clear any snooze
               if (firstTimeParam) {
-                try { localStorage.removeItem('dh_member_modal_snooze'); } catch {}
+                try {
+                  localStorage.removeItem("dh_member_modal_snooze");
+                } catch {}
                 setShowMemberWelcome(true);
               } else {
                 // Otherwise, if the user snoozed previously, show a banner; else show modal
                 let snoozed = false;
-                try { snoozed = localStorage.getItem('dh_member_modal_snooze') === '1'; } catch {}
+                try {
+                  snoozed =
+                    localStorage.getItem("dh_member_modal_snooze") === "1";
+                } catch {}
                 if (snoozed) setShowMemberBanner(true);
                 else setShowMemberWelcome(true);
               }
@@ -80,15 +93,28 @@ export default function DashboardPage() {
               try {
                 const email = session?.user?.email || "";
                 if (!email) return;
-                const s2 = await fetch(`/api/users/status?email=${encodeURIComponent(email)}&_t=${Date.now()}`, { cache: "no-store" });
+                const s2 = await fetch(
+                  `/api/users/status?email=${encodeURIComponent(
+                    email
+                  )}&_t=${Date.now()}`,
+                  { cache: "no-store" }
+                );
                 const sd2 = s2.ok ? await s2.json() : null;
-                const r2 = await fetch(`/api/account/overview?_t=${Date.now()}`, { cache: "no-store" });
+                const r2 = await fetch(
+                  `/api/account/overview?_t=${Date.now()}`,
+                  { cache: "no-store" }
+                );
                 const ov2 = r2.ok ? await r2.json() : null;
-                if ((sd2?.role === "member") || (ov2?.membership?.status === "active")) {
+                if (
+                  sd2?.role === "member" ||
+                  ov2?.membership?.status === "active"
+                ) {
                   setRole("member");
                   setOverview(ov2 || data);
                   if (ov2?.flags?.memberWelcomePending) {
-                    try { localStorage.removeItem('dh_member_modal_snooze'); } catch {}
+                    try {
+                      localStorage.removeItem("dh_member_modal_snooze");
+                    } catch {}
                     setShowWelcome(false);
                     setShowMemberBanner(false);
                     setShowMemberWelcome(true);
@@ -168,7 +194,8 @@ export default function DashboardPage() {
               <p className="text-gray-700 mb-4">
                 We’re thrilled you’ve joined our buzzing community.
                 <br />
-                Please update your details to help us get everything ready for you and your little dancer
+                Please update your details to help us get everything ready for
+                you and your little dancer
               </p>
               <div className="flex gap-3 justify-center">
                 <a
@@ -179,7 +206,13 @@ export default function DashboardPage() {
                   Update Details
                 </a>
                 <button
-                  onClick={() => { setShowMemberWelcome(false); setShowMemberBanner(true); try { localStorage.setItem('dh_member_modal_snooze','1'); } catch {} }}
+                  onClick={() => {
+                    setShowMemberWelcome(false);
+                    setShowMemberBanner(true);
+                    try {
+                      localStorage.setItem("dh_member_modal_snooze", "1");
+                    } catch {}
+                  }}
                   className="border border-gray-300 text-gray-700 px-5 py-2 rounded hover:bg-gray-50"
                 >
                   Later
@@ -192,42 +225,44 @@ export default function DashboardPage() {
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
             <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full mx-4 p-6 text-center">
               <h2 className="font-bold text-xl mb-3">
+                {" "}
                 {returning ? (
                   <>Welcome back, {session?.user?.name || "there"}!</>
                 ) : (
                   <>You made it, {session?.user?.name || "there"}!</>
-                )}
+                )}{" "}
               </h2>
-
               {returning ? (
                 <div className="text-gray-700 mb-4">
+                  {" "}
                   <p>
-                    We’ve missed you at the Hive — we’d love to have you buzzing
-                    with us again!
-                  </p>
+                    {" "}
+                    We've missed you at the Hive - we'd love to have you buzzing
+                    with us again!{" "}
+                  </p>{" "}
                   <p>
+                    {" "}
                     Pick up right where you left off and re-activate your
-                    membership.
-                  </p>
+                    membership.{" "}
+                  </p>{" "}
                 </div>
               ) : (
                 <>
+                  {" "}
                   <p className="text-gray-700 mb-4 hidden">
-                    Your trial class was just the beginning — we'd love for you
-                    to stay with us!
-                    <br />
-                    Get ready to become an official member of the Hive.
-                  </p>
+                    {" "}
+                    Your trial class was just the beginning - we'd love for you
+                    to stay with us! <br /> Get ready to become an official
+                    member of the Hive.{" "}
+                  </p>{" "}
                   <p className="text-gray-700 mb-4">
-                    Your trial class was just the beginning
-                    <br />
-                    we'd love for you to stay with us!
-                    <br />
-                    Get ready to become an official member of the Hive.
-                  </p>
+                    {" "}
+                    Your trial class was just the beginning <br /> we'd love for
+                    you to stay with us! <br /> Get ready to become an official
+                    member of the Hive.{" "}
+                  </p>{" "}
                 </>
               )}
-
               <div className="flex gap-3 justify-center">
                 <button
                   onClick={handleUpgrade}
@@ -257,10 +292,16 @@ export default function DashboardPage() {
               <div>
                 <div className="font-medium">Welcome to the Hive!</div>
                 <div>
-                  Please update your details so we can get everything ready for you and your little dancer.
+                  Please update your details so we can get everything ready for
+                  you and your little dancer.
                 </div>
               </div>
-              <a href="/dashboard/settings" className="shrink-0 inline-block bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3 py-1.5 rounded">Update</a>
+              <a
+                href="/dashboard/settings"
+                className="shrink-0 inline-block bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3 py-1.5 rounded"
+              >
+                Update
+              </a>
             </div>
           </div>
         )}
@@ -552,14 +593,60 @@ export default function DashboardPage() {
                         {new Intl.NumberFormat("en-GB", {
                           style: "currency",
                           currency: String(p.currency || "GBP").toUpperCase(),
-                          minimumFractionDigits: 0,
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
                         }).format(Number(p.amount) || 0)}
                       </td>
                       <td className="px-4 py-2 border">
-                        {String(p.payment_status || p.status || '').replace('_',' ') || 'pending'}
+                        {String(p.payment_status || p.status || "").replace(
+                          "_",
+                          " "
+                        ) || "pending"}
                       </td>
                     </tr>
                   ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* Upcoming Payment */}
+        {overview?.membership?.status === "active" && overview?.nextPayment && (
+          <div className="max-w-3xl mx-auto bg-white rounded-xl shadow p-6 text-left mb-6">
+            <h2 className="text-lg font-semibold mb-3">
+              Upcoming Direct Debit
+            </h2>
+            <div className="rounded-lg border border-gray-200 overflow-hidden">
+              <table className="min-w-full text-sm">
+                <thead className="bg-gray-100">
+                  <tr>
+                    <th className="px-4 py-2 border text-left">Date</th>
+                    <th className="px-4 py-2 border text-left">Amount</th>
+                    <th className="px-4 py-2 border text-left">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr className="hover:bg-gray-50">
+                    <td className="px-4 py-2 border">
+                      {new Date(overview.nextPayment.date).toLocaleDateString()}
+                    </td>
+                    <td className="px-4 py-2 border">
+                      {new Intl.NumberFormat("en-GB", {
+                        style: "currency",
+                        currency: String(
+                          overview.nextPayment.currency || "GBP"
+                        ).toUpperCase(),
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      }).format(Number(overview.nextPayment.amount) || 0)}
+                    </td>
+                    <td className="px-4 py-2 border capitalize">
+                      {String(
+                        overview.nextPayment.status || "scheduled"
+                      ).replace("_", " ")}
+                    </td>
+                  </tr>
                 </tbody>
               </table>
             </div>
@@ -569,4 +656,3 @@ export default function DashboardPage() {
     </DashboardLayout>
   );
 }
-

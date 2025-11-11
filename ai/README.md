@@ -86,27 +86,32 @@ trialBookings schema (effective)
 ## 9) Archive/Restore & Reactivation
 
 Admin Archive & Previous Customers
+
 - Archive endpoint snapshots a member’s user + children (+ enrollments) into `previousCustomers` and deletes them from active collections.
 - Admin page `/admin/previous-customers` lists archived users with Parent, Child, Email, Archived (date), Reason, and Restore action.
 - Archived users are excluded from Admin Trials and Teacher registers APIs.
 
 Restore & Returning Customers
+
 - Restore endpoint recreates user + children from the snapshot and normalizes account:
   - `role = customer`, `membership.status = "none"`, `flags.reactivationPending = true`.
 - Member dashboard shows a tailored “Welcome back” modal with a "Re‑activate Membership" CTA when `reactivationPending` is set.
 - Stripe checkout + webhook activate membership and clear `flags.reactivationPending`.
 
 API touchpoints
+
 - `/api/admin/users/archive` (POST)
 - `/api/admin/users/restore` (POST)
 - `/api/admin/previous-customers` (GET)
 - `/api/account/overview` returns `children[]` and `flags`.
 
 Operational notes
+
 - Ensure indexes exist via `npm run create-indexes`.
 - Use `npm run reset-test-data` during development to reset fixtures.
 
 ### Billing Implementation Notes (GC)
+
 - Keep enrollments as the source of truth for class participation.
 - Derive `enrollmentCount` from enrollments (active only) when updating subscriptions.
 - Store in users.membership:
@@ -131,12 +136,14 @@ Operational notes
 ## 9) Migration From Stripe â†’ GoCardless (Checklist)
 
 Prereqs
+
 - GoCardless sandbox account + access token
 - Webhook endpoint URL reachable from GC (ngrok in dev)
 - Decide pricing rule (linear Â£30 Ã— count, or tiered map)
 - Policy for proration (recommend: apply changes next charge date; optionally create oneâ€‘off Payments)
 
 Environment variables (proposed)
+
 - `GOCARDLESS_ACCESS_TOKEN`
 - `GOCARDLESS_WEBHOOK_SECRET`
 - `GOCARDLESS_REDIRECT_SUCCESS_URL` (where GC returns to after mandate setup)
@@ -144,12 +151,14 @@ Environment variables (proposed)
 - Optional: `GOCARDLESS_CURRENCY` default `GBP`
 
 Data model additions (users.membership)
+
 - `gocardless_customer_id`
 - `gocardless_mandate_id`
 - `gocardless_subscription_id`
 - Optional cache: `enrollmentCount`, `nextChargeDate`
 
 API changes (high level)
+
 - Replace `/api/checkout`:
   - Start GC Redirect Flow â†’ return `redirect_url`
   - On return, exchange for customer/mandate and create subscription with `amount = priceFor(enrollmentCount)` and monthly interval
@@ -161,6 +170,7 @@ API changes (high level)
   - Use existing `processedEvents` idempotency guard
 
 Enrollment-driven updates
+
 - After any enrollment add/remove:
   - Recompute active `enrollmentCount`
   - Compute new amount and update GC subscription amount (effective next collection)
@@ -168,18 +178,21 @@ Enrollment-driven updates
   - Store cached `membership.enrollmentCount`
 
 UI notes
+
 - Member dashboard: show enrollment count and next charge amount/date (if cached)
 - Admin modal already shows/edit enrollments; after change, optionally trigger a billing sync endpoint
 
 Cutover steps
-1) Deploy webhook endpoint for GC and verify signature locally
-2) Implement redirect flow + subscription creation in sandbox
-3) Switch `/api/checkout` to GC path; keep Stripe path disabled
-4) Update README billing notes and ops runbook
-5) QA: mandate created â†’ subscription created â†’ payment confirmed webhook â†’ payments row written â†’ membership active
-6) Optional migration: keep Stripe payments as readâ€‘only history; do not mix providers for the same user
+
+1. Deploy webhook endpoint for GC and verify signature locally
+2. Implement redirect flow + subscription creation in sandbox
+3. Switch `/api/checkout` to GC path; keep Stripe path disabled
+4. Update README billing notes and ops runbook
+5. QA: mandate created â†’ subscription created â†’ payment confirmed webhook â†’ payments row written â†’ membership active
+6. Optional migration: keep Stripe payments as readâ€‘only history; do not mix providers for the same user
 
 Ops/failure handling
+
 - Mandate failure or bank details changed â†’ pause membership and notify admin
 - Payment failure â†’ keep membership pending and surface in admin payments
 - Retries: GC will retry; webhook handler must be idempotent
@@ -213,4 +226,3 @@ Ops/failure handling
   - No custom `payments.reference`; max 3 metadata keys.
   - Occasional `409/422` on redirect flow completion (double‑submit in dev) — first success is sufficient.
   - Atlas `collMod` for TTL index may be denied; we log and continue (non‑fatal).
-

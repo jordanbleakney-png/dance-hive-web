@@ -97,9 +97,21 @@ export async function POST(req: Request): Promise<Response> {
         },
         { sort: { updatedAt: -1, createdAt: -1 } as any }
       );
-      if (!trial || !trial.classId) return;
-
-      const classId = new ObjectId(String(trial.classId));
+      let classId: ObjectId | null = null;
+      if (trial?.classId) {
+        classId = new ObjectId(String(trial.classId));
+      } else {
+        // Fallback for restored users (trial archived): use previousCustomers snapshot
+        try {
+          const prev = await db.collection("previousCustomers").findOne({ email });
+          const snap = (prev as any)?.snapshot?.enrollments || [];
+          if (Array.isArray(snap) && snap.length > 0) {
+            const firstActive = snap.find((e: any) => (e?.status || "active") === "active") || snap[0];
+            if (firstActive?.classId) classId = new ObjectId(String(firstActive.classId));
+          }
+        } catch {}
+        if (!classId) return;
+      }
 
       // Determine child to enroll (prefer trial child names)
       const split = (full?: string) => {
@@ -270,7 +282,7 @@ export async function POST(req: Request): Promise<Response> {
           try {
             const payments = db.collection("payments");
             const docSet: any = {
-              amount: amountPence ? Math.round(amountPence / 100) : null,
+              amount: amountPence ? parseFloat(String((amountPence / 100).toFixed(2))) : null,
               currency,
               provider: "GoCardless",
               status: "confirmed",
@@ -299,15 +311,97 @@ export async function POST(req: Request): Promise<Response> {
           break;
         }
         case "payments.failed": {
+          const paymentId = String(links.payment || event.details?.origin || "").trim();
           let email = String(event.metadata?.email || "").toLowerCase();
+          let amountPence = 0;
+          let currency = "GBP";
+          let paymentMeta: any = null;
+
+          // Enrich from GoCardless Payments API if possible
+          try {
+            const base = process.env.GOCARDLESS_ENV === "live" ? "https://api.gocardless.com" : "https://api-sandbox.gocardless.com";
+            const headers: Record<string, string> = {
+              Authorization: `Bearer ${process.env.GOCARDLESS_ACCESS_TOKEN || ""}`,
+              "GoCardless-Version": "2015-07-06",
+            };
+            if (paymentId) {
+              const pr = await fetch(`${base}/payments/${paymentId}`, { headers });
+              if (pr.ok) {
+                const pj = await pr.json();
+                amountPence = Number(pj?.payments?.amount || 0);
+                currency = String(pj?.payments?.currency || "GBP").toUpperCase();
+                paymentMeta = pj?.payments?.metadata || null;
+                if (!email) email = String(pj?.payments?.metadata?.email || "").toLowerCase();
+                if (!email) {
+                  const subId = pj?.payments?.links?.subscription;
+                  if (subId) {
+                    const rs = await fetch(`${base}/subscriptions/${subId}`, { headers });
+                    if (rs.ok) {
+                      const sj = await rs.json();
+                      email = String(sj?.subscriptions?.metadata?.email || "").toLowerCase();
+                    }
+                  }
+                }
+              }
+            }
+          } catch {}
+
+          // Fallbacks: generic lookup or seeded pending row
           if (!email) email = (await getEmailFromGcByLinks(links)) || "";
-          try { console.log("[gc webhook] payments.failed resolvedEmail=", email); } catch {}
+          try {
+            if (!email && paymentId) {
+              const seeded = await db.collection("payments").findOne({ payment_id: paymentId });
+              if (seeded?.email) email = String(seeded.email).toLowerCase();
+            }
+          } catch {}
+
+          const now = new Date();
+          try { console.log("[gc webhook] payments.failed resolvedEmail=", email || "<none>"); } catch {}
+
+          // Membership back to pending (only if we know the user)
           if (email) {
-            await db.collection("users").updateOne(
-              { email },
-              { $set: { "membership.status": "pending", updatedAt: new Date() } }
-            );
+            try {
+              await db.collection("users").updateOne(
+                { email },
+                { $set: { "membership.status": "pending", updatedAt: now } }
+              );
+            } catch {}
           }
+
+          // Upsert payment row to failed using payment_id when available
+          try {
+            const payments = db.collection("payments");
+            const docSet: any = {
+              status: "failed",
+              payment_status: "failed",
+              updatedAt: now,
+            };
+            if (email) docSet.email = email;
+            if (currency) docSet.currency = currency;
+            if (amountPence) docSet.amount = parseFloat(String((amountPence / 100).toFixed(2)));
+            if (paymentMeta) docSet.metadata = paymentMeta;
+
+            if (paymentId) {
+              await payments.updateOne(
+                { payment_id: paymentId },
+                { $set: docSet, $setOnInsert: { createdAt: now, provider: "GoCardless", payment_id: paymentId } },
+                { upsert: true }
+              );
+            } else {
+              await payments.insertOne({
+                email: email || null,
+                amount: amountPence ? parseFloat(String((amountPence / 100).toFixed(2))) : null,
+                currency,
+                provider: "GoCardless",
+                status: "failed",
+                payment_status: "failed",
+                createdAt: now,
+                updatedAt: now,
+                payment_id: null,
+                metadata: paymentMeta || undefined,
+              });
+            }
+          } catch {}
           break;
         }
         case "subscriptions.activated":

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -45,8 +45,8 @@ export default function AdminPaymentsPage() {
                 <tr key={p._id} className="hover:bg-gray-50">
                   <td className="px-4 py-2 border">{p.parentName || ""}</td>
                   <td className="px-4 py-2 border">{p.email}</td>
-                  <td className="px-4 py-2 border">{new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP', minimumFractionDigits: 0 }).format(Number(p.amount) || 0)}</td>
-                  <td className="px-4 py-2 border">{(p.status || '').replace('_', ' ') || '—'}</td>
+                  <td className="px-4 py-2 border">{new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(p.amount) || 0)}</td>
+                  <td className="px-4 py-2 border">{(p.status || '').replace('_', ' ') || 'â€”'}</td>
                   <td className="px-4 py-2 border">{new Date(p.createdAt || p.timestamp || Date.now()).toLocaleString()}</td>
                 </tr>
               ))}
@@ -57,3 +57,4 @@ export default function AdminPaymentsPage() {
     </DashboardLayout>
   );
 }
+

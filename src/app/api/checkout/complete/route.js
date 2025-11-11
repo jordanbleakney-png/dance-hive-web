@@ -162,7 +162,9 @@ export async function POST(req) {
                       Authorization: `Bearer ${process.env.GOCARDLESS_ACCESS_TOKEN}`,
                       "GoCardless-Version": "2015-07-06",
                       "Content-Type": "application/json",
-                      "Idempotency-Key": idemp,
+                      // Include redirect_flow_id so a same-month reactivation after restore
+                      // does not get deduped by a previous prorata attempt.
+                      "Idempotency-Key": `${idemp}:${redirect_flow_id}`,
                     },
                     body: JSON.stringify({
                       payments: {
@@ -188,7 +190,7 @@ export async function POST(req) {
                     try {
                       await db.collection("payments").insertOne({
                         email: session.user.email,
-                        amount: Math.round(prorataPence / 100),
+                        amount: parseFloat(String((prorataPence / 100).toFixed(2))),
                         currency: process.env.GOCARDLESS_CURRENCY || "GBP",
                         provider: "GoCardless",
                         payment_id: createdPaymentId,
@@ -201,7 +203,7 @@ export async function POST(req) {
                       await db.collection("membershipHistory").insertOne({
                         email: session.user.email,
                         event: "prorata_issued",
-                        amount: Math.round(prorataPence / 100),
+                        amount: parseFloat(String((prorataPence / 100).toFixed(2))),
                         month: monthTag,
                         provider: "GoCardless",
                         timestamp: new Date(),
@@ -210,6 +212,104 @@ export async function POST(req) {
                   }
                 } catch (e) {
                   console.warn("[checkout/complete] Pro‑rata payment error", e);
+                }
+              }
+            }
+          }
+        }
+      } else {
+        // Fallback for restored customers (no converted trial available):
+        // use the previousCustomers snapshot to infer their class.
+        const prev = await db
+          .collection("previousCustomers")
+          .findOne({ email: session.user.email.toLowerCase() });
+        const snapEnroll = prev?.snapshot?.enrollments || [];
+        const firstActive = Array.isArray(snapEnroll)
+          ? (snapEnroll.find((e) => (e?.status || "active") === "active") || snapEnroll[0])
+          : null;
+        if (firstActive?.classId) {
+          const classId = new ObjectId(String(firstActive.classId));
+          const cls = await db.collection("classes").findOne({ _id: classId });
+          if (cls) {
+            const dayToIndex = { Sunday:0, Monday:1, Tuesday:2, Wednesday:3, Thursday:4, Friday:5, Saturday:6 };
+            const weekday = dayToIndex[String(cls.day || "")] ?? null;
+            if (weekday !== null) {
+              const today = new Date();
+              const utcY = today.getUTCFullYear();
+              const utcM = today.getUTCMonth();
+              const start = new Date(Date.UTC(utcY, utcM, today.getUTCDate()));
+              const end = new Date(Date.UTC(utcY, utcM + 1, 0));
+              const startDow = start.getUTCDay();
+              let delta = weekday - startDow;
+              if (delta < 0) delta += 7;
+              const firstOcc = new Date(start);
+              firstOcc.setUTCDate(start.getUTCDate() + delta);
+              let classesLeft = 0;
+              for (let d = new Date(firstOcc); d <= end; d.setUTCDate(d.getUTCDate() + 7)) {
+                if (d < start) continue;
+                classesLeft++;
+              }
+              if (classesLeft > 0) {
+                const monthlyPence = parseInt(amount, 10);
+                const perClass = Math.ceil(monthlyPence / 4);
+                let prorataPence = perClass * classesLeft;
+                if (prorataPence > monthlyPence) prorataPence = monthlyPence;
+                if (prorataPence > 0) {
+                  const monthTag = `${utcY}-${String(utcM + 1).padStart(2, '0')}`;
+                  const idemp = `prorata:${String(userId)}:${monthTag}`;
+                  try {
+                    const payResp = await fetch(`${base}/payments`, {
+                      method: "POST",
+                      headers: {
+                        Authorization: `Bearer ${process.env.GOCARDLESS_ACCESS_TOKEN}`,
+                        "GoCardless-Version": "2015-07-06",
+                        "Content-Type": "application/json",
+                        "Idempotency-Key": `${idemp}:${redirect_flow_id}`,
+                      },
+                      body: JSON.stringify({
+                        payments: {
+                          amount: String(prorataPence),
+                          currency: process.env.GOCARDLESS_CURRENCY || "GBP",
+                          links: { mandate: mandateId },
+                          metadata: { email: session.user.email, reason: "prorata", month: monthTag },
+                        },
+                      }),
+                    });
+                    if (!payResp.ok) {
+                      const txt = await payResp.text();
+                      console.warn("[checkout/complete] Pro‑rata payment create failed:", txt);
+                    } else {
+                      let createdPaymentId = null;
+                      try {
+                        const pj = await payResp.json();
+                        createdPaymentId = pj?.payments?.id || null;
+                      } catch {}
+                      try {
+                        await db.collection("payments").insertOne({
+                          email: session.user.email,
+                          amount: parseFloat(String((prorataPence / 100).toFixed(2))),
+                          currency: process.env.GOCARDLESS_CURRENCY || "GBP",
+                          provider: "GoCardless",
+                          payment_id: createdPaymentId,
+                          status: "pending_submission",
+                          createdAt: new Date(),
+                          metadata: { reason: "prorata", month: monthTag },
+                        });
+                      } catch {}
+                      try {
+                        await db.collection("membershipHistory").insertOne({
+                          email: session.user.email,
+                          event: "prorata_issued",
+                          amount: parseFloat(String((prorataPence / 100).toFixed(2))),
+                          month: monthTag,
+                          provider: "GoCardless",
+                          timestamp: new Date(),
+                        });
+                      } catch {}
+                    }
+                  } catch (e) {
+                    console.warn("[checkout/complete] Pro‑rata payment error", e);
+                  }
                 }
               }
             }

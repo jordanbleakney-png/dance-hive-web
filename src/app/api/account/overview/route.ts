@@ -71,6 +71,31 @@ export async function GET() {
       ])
       .toArray();
 
+    // Compute upcoming monthly direct debit (1st of next month; weekends shift to Monday)
+    const activeEnrollments = Array.isArray(enrollments)
+      ? enrollments.filter((e: any) => (e?.status || "active") === "active").length
+      : 0;
+    const priceFor = (n: number) => {
+      if (!n || n <= 1) return 3000; // £30
+      if (n === 2) return 5500;      // £55
+      if (n >= 3) return 7500;       // £75 cap
+      return 3000;
+    };
+    const monthlyPence = priceFor(activeEnrollments);
+    const now = new Date();
+    const nextMonthFirst = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+    // Shift Saturday/Sunday to Monday (bank holidays handled by GC itself)
+    const dow = nextMonthFirst.getUTCDay(); // 0=Sun..6=Sat
+    if (dow === 0) nextMonthFirst.setUTCDate(nextMonthFirst.getUTCDate() + 1);
+    if (dow === 6) nextMonthFirst.setUTCDate(nextMonthFirst.getUTCDate() + 2);
+    const nextPayment = {
+      date: nextMonthFirst.toISOString(),
+      amount: Math.round(monthlyPence / 100),
+      currency: (process.env.GOCARDLESS_CURRENCY || "GBP").toUpperCase(),
+      status: "scheduled",
+      enrollmentCount: activeEnrollments,
+    };
+
     // Recent payments (last 5)
     const rawPayments = await db
       .collection("payments")
@@ -108,6 +133,7 @@ export async function GET() {
       email: (user as any).email || null,
       enrollments,
       payments,
+      nextPayment,
       flags: (user as any).flags || null, // add this
     });
   } catch (err) {

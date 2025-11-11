@@ -33,7 +33,7 @@ export async function POST(req: Request) {
         { email: archived.email },
         {
           $set: { restoredAt: new Date(), restoredBy: session.user.email },
-          $unset: { snapshot: "" },
+          // Keep snapshot for future reactivations; do not unset it.
         }
       );
       return NextResponse.json({ ok: true, note: "already_exists" });
@@ -93,7 +93,7 @@ export async function POST(req: Request) {
       { email: archived.email },
       {
         $set: { restoredAt: new Date(), restoredBy: session.user.email },
-        $unset: { snapshot: "" },
+        // Keep snapshot for future reactivations; do not unset it.
       }
     );
 
