@@ -273,7 +273,12 @@ export default function TeacherClassRegisterPage() {
                     .join(" ") || t.parentName || "";
                   return (
                     <tr key={t._id} className="hover:bg-gray-50">
-                      <td className="px-4 py-2 border">{childName}</td>
+                      <td className="px-4 py-2 border">
+                        {childName}
+                        {t?.isMemberTrial && (
+                          <span className="ml-2 text-xs px-2 py-0.5 rounded border bg-purple-50 text-purple-700">Member</span>
+                        )}
+                      </td>
                       <td className="px-4 py-2 border">{parentName}</td>
                       <td className="px-4 py-2 border">{t.phone || t.email}</td>
                       <td className="px-4 py-2 border">{t.status || 'pending'}</td>

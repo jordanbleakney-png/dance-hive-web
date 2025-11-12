@@ -66,10 +66,10 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
       ])
       .toArray();
 
-    // Also fetch trial bookings linked to this class by string classId
+    // Also fetch trial bookings linked to this class (support string or ObjectId classId)
     const url = new URL(req.url);
     const selectedDate = url.searchParams.get('date'); // YYYY-MM-DD
-    const trialsQuery: any = { classId: String(classId) };
+    const trialsQuery: any = { $or: [ { classId }, { classId: String(classId) } ] };
     if (selectedDate) {
       // Prefer server-side filtering for efficiency; include legacy records without trialDate
       trialsQuery.$or = [
@@ -90,6 +90,7 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
         email: 1,
         phone: 1,
         status: 1,
+        isMemberTrial: 1,
         trialDate: 1,
         createdAt: 1,
       })
@@ -98,11 +99,14 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
     // Exclude trials for users who are already members
     const emails = Array.from(new Set(trialsRaw.map((t: any) => String(t.email || '').toLowerCase()).filter(Boolean)));
     let memberEmails = new Set<string>();
+    let existingUserEmails = new Set<string>();
     if (emails.length) {
       const users = await db.collection('users').find({ email: { $in: emails } }).project({ email: 1, role: 1, membership: 1 } as any).toArray();
       users.forEach((u: any) => {
+        const key = String(u.email || '').toLowerCase();
+        existingUserEmails.add(key);
         if (u?.role === 'member' || u?.membership?.status === 'active') {
-          memberEmails.add(String(u.email || '').toLowerCase());
+          memberEmails.add(key);
         }
       });
     }
@@ -114,7 +118,14 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
       const archivedTrial = st === 'archived';
       const attendedTrial = st === 'attended';
       const absentTrial = st === 'absent';
-      if (memberEmails.has(emailKey) || prevEmails.has(emailKey) || archivedTrial || attendedTrial || absentTrial) return false;
+      const convertedTrial = st === 'converted';
+      // Keep member-originated trials even if the user is a member
+      if (!t?.isMemberTrial) {
+        if (memberEmails.has(emailKey)) return false;
+      }
+      // Do not hide restored users just because a previousCustomers snapshot exists
+      const isArchivedOnly = prevEmails.has(emailKey) && !existingUserEmails.has(emailKey);
+      if (isArchivedOnly || archivedTrial || attendedTrial || absentTrial || convertedTrial) return false;
       if (selectedDate) {
         if (t.trialDate) return String(t.trialDate).slice(0,10) === selectedDate;
         // legacy: shown on all dates until backfilled

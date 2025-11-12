@@ -65,6 +65,7 @@ export default function AdminFollowUpsPage() {
                   <tr>
                     <th className="px-4 py-2 border text-left whitespace-nowrap">Parent</th>
                     <th className="px-4 py-2 border text-left whitespace-nowrap">Child</th>
+                    <th className="px-4 py-2 border text-left whitespace-nowrap">Class</th>
                     <th className="px-4 py-2 border text-left whitespace-nowrap">Phone</th>
                     <th className="px-4 py-2 border text-left">Email</th>
                     <th className="px-4 py-2 border text-left">Trial Date</th>
@@ -76,13 +77,14 @@ export default function AdminFollowUpsPage() {
                 <tbody>
                   {rows.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="px-4 py-4 text-center text-gray-500">No follow ups.</td>
+                      <td colSpan={9} className="px-4 py-4 text-center text-gray-500">No follow ups.</td>
                     </tr>
                   ) : (
                     rows.map((r) => (
                       <tr key={r._id} className="hover:bg-gray-50 align-top">
                         <td className="px-4 py-2 border whitespace-nowrap">{r.parentFullName}</td>
                         <td className="px-4 py-2 border whitespace-nowrap">{r.childFullName}</td>
+                        <td className="px-4 py-2 border whitespace-nowrap">{r.className || r.classId || '-'}</td>
                         <td className="px-4 py-2 border whitespace-nowrap">{r.phone || '-'}</td>
                         <td className="px-4 py-2 border">{r.email}</td>
                         <td className="px-4 py-2 border">{r.trialDate ? new Date(r.trialDate).toLocaleDateString('en-GB') : '-'}</td>

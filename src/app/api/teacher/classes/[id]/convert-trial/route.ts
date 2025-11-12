@@ -110,6 +110,49 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       { $set: { primaryChildId: childId } }
     );
 
+    // For member-originated trials, enrolling immediately on conversion keeps Admin in sync
+    // (Admin/trials conversion already enrolls member trials). For non-members, enrollment
+    // still happens after the GC webhook activates membership.
+    if ((trial as any)?.isMemberTrial) {
+      const cls = await db.collection("classes").findOne({ _id: classId });
+      if (!cls) return NextResponse.json({ error: "Class not found" }, { status: 404 });
+      const cap = Number((cls as any).capacity || 0);
+      if (cap > 0) {
+        const enrolledCount = await db
+          .collection("enrollments")
+          .countDocuments({ classId, status: "active" });
+        if (enrolledCount >= cap) {
+          return NextResponse.json({ error: "Class is at capacity" }, { status: 400 });
+        }
+      }
+
+      const payload: any = {
+        userId,
+        childId,
+        classId,
+        status: "active",
+        attendedDates: [],
+        createdAt: new Date(),
+      };
+      await db.collection("enrollments").updateOne(
+        { userId, childId, classId },
+        { $setOnInsert: payload },
+        { upsert: true }
+      );
+    }
+
+    // Write a history trail
+    try {
+      await db.collection("membershipHistory").insertOne({
+        email: String((trial as any)?.email || "").toLowerCase(),
+        event: (trial as any)?.isMemberTrial ? "trial_converted_extra_class" : "trial_converted",
+        classId,
+        childId,
+        provider: "internal",
+        timestamp: new Date(),
+      });
+    } catch {}
+
     // Update trial status
     await db.collection("trialBookings").updateOne(
       { _id: tId },

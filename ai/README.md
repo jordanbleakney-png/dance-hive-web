@@ -1,228 +1,129 @@
-﻿# Dance Hive - System Overview & Development Guide
+# Dance Hive – System Overview for Contributors and Tools
 
-Purpose: Give contributors and AI tools a precise, up-to-date picture of Dance Hive's product flow and implementation guardrails. Self-service sign-up is disabled. All accounts originate from trial conversions managed by staff.
-
----
-
-## 1) Public Experience
-
-- Home: marketing content + CTAs.
-- Classes (public): shows available classes with descriptions and details.
-  - Hive Tots (18 months - 3 years)
-  - Hive Preschool Ballet (3 - 4 years)
-  - Hive Preschool Acro (2.5 - 4 years)
-- Trial booking: parent selects a class and submits details.
-
-Required fields
-
-- Parent: firstName, lastName, email, phone
-- Child: firstName, lastName, age
-- Class: classId
-
-trialBookings schema (effective)
-
-- parent{}, child{}, classId, status (pending|attended|converted), createdAt, updatedAt, convertedAt (nullable)
-- For legacy data, flat fields (parentName, childName, childAge, phone) may also exist. APIs handle both shapes.
-
-## 2) Trial -> Account Creation
-
-- Admin/Teacher updates a trial to converted.
-- If user doesn't exist, create with role customer and temporary password (hashed).
-- The parent receives login instructions.
-
-## 3) Membership & Payments (GoCardless plan)
-
-- Testing used Stripe, but production will use GoCardless (GC).
-- Flow: user clicks "Become a Member" -> GC hosted redirect to create customer + mandate -> create GC subscription.
-- Billing amount is computed from enrollmentCount (see Section 5/8):
-  - Linear (Â£30 Ã— active classes) or tiered mapping (e.g., 1=Â£30, 2=Â£55, 3=Â£75).
-  - Update GC subscription amount when enrollments change (effective from next collection date). For midâ€‘cycle proration, optionally create a oneâ€‘off Payment.
-- Webhooks: record successful payments, activate/keep membership, and handle mandate or subscription failures.
-- payments collection: store amount in pounds, currency GBP; add provider identifiers (payment_id, mandate_id) when GC is integrated.
-
-## 4) Dashboards & UX
-
-- Member dashboard: shows role, hides "Upgrade to Member" when role === member or membership.status === active. Onboarding card uses a single "Update Details" button (password + personal/emergency/medical info). Settings now also collects Child date of birth + Address.
-- Teacher dashboard: class list + register page backed by enrollments. Teachers can mark attendance (attendedDates on enrollments). Register is weekly, pinned to the class weekday. Future weeks are viewâ€‘only (no marking).
-- Admin dashboard:
-  - Users: search by name/email/role; table shows Parent, Child, Email, Role, Membership, Phone. Clicking a row opens an inline modal with user, bookings and payments (via `/api/customers/[email]`).
-  - Trials: update status (pending -> attended -> converted).
-  - Payments: transactions (GBP), parent name from users/trials.
-  - Classes: list shows student counts via enrollments; detail shows child name, age, parent contact and email.
-
-## 5) Collections (MongoDB)
-
-- classes: name, style, day, time, capacity, instructor
-- trialBookings: parent{}, child{}, classId, status, createdAt, updatedAt, convertedAt
-- children: userId, firstName, lastName, dob?, medical?, emergencyContact?, createdAt, updatedAt
-- users: email, password (hashed), role (trial|customer|member|teacher|admin), phone, parent{firstName,lastName}, address{houseNumber,street,city,county,postcode}, membership{status, plan, timestamps}, flags{}
-- enrollments: userId, childId, classId, status, attendedDates[], createdAt
-  - Indexes: unique { userId:1, childId:1, classId:1 }, plus { userId:1 }, { classId:1 }, { childId:1 }
-- payments: email, amount (pounds), currency (GBP), payment_status, payment_intent, createdAt
-- membershipHistory: conversions/renewals/cancellations with timestamps
-- processedEvents: Stripe webhook idempotency keys
-
-## 6) Guardrails & Conventions
-
-- No public sign-up: `/signup` removed; `/api/register` disabled.
-- Auth: NextAuth Credentials (JWT). `session.user.role` drives routing and access.
-- API: validate inputs (Zod where practical), return `NextResponse.json()`, and use the shared DB helper `getDb()`.
-- Payments: Stripe (testing) shifting to GoCardless (production). Keep handlers idempotent; use processedEvents for idempotency.
-- Styling: Tailwind v4; keep components accessible and minimal. Prefer ASCII logs (avoid emojis) to prevent mojibake on Windows terminals. If Atlas denies `collMod` while altering the TTL index, log once and continue.
-
-## 7) Developer Utilities
-
-- scripts/backfillUsers.js: backfill names/child details/membership.classId from trialBookings; create enrollments. Optional purge flags.
-- scripts/normalizePayments.js: convert payment amounts from pence -> pounds and (optionally) remove near-duplicates.
-
-## 8) Coding Do/Don't
-
-- Do enforce the trial -> conversion -> membership flow.
-- Do gate routes and UI by role.
-- Do keep `/api/register` disabled; don't add public sign-up.
-- Do standardize on `getDb()` for Mongo access.
-- Don't log secrets or credentials; don't store plaintext passwords.
-
-## 9) Archive/Restore & Reactivation
-
-Admin Archive & Previous Customers
-
-- Archive endpoint snapshots a member’s user + children (+ enrollments) into `previousCustomers` and deletes them from active collections.
-- Admin page `/admin/previous-customers` lists archived users with Parent, Child, Email, Archived (date), Reason, and Restore action.
-- Archived users are excluded from Admin Trials and Teacher registers APIs.
-
-Restore & Returning Customers
-
-- Restore endpoint recreates user + children from the snapshot and normalizes account:
-  - `role = customer`, `membership.status = "none"`, `flags.reactivationPending = true`.
-- Member dashboard shows a tailored “Welcome back” modal with a "Re‑activate Membership" CTA when `reactivationPending` is set.
-- Stripe checkout + webhook activate membership and clear `flags.reactivationPending`.
-
-API touchpoints
-
-- `/api/admin/users/archive` (POST)
-- `/api/admin/users/restore` (POST)
-- `/api/admin/previous-customers` (GET)
-- `/api/account/overview` returns `children[]` and `flags`.
-
-Operational notes
-
-- Ensure indexes exist via `npm run create-indexes`.
-- Use `npm run reset-test-data` during development to reset fixtures.
-
-### Billing Implementation Notes (GC)
-
-- Keep enrollments as the source of truth for class participation.
-- Derive `enrollmentCount` from enrollments (active only) when updating subscriptions.
-- Store in users.membership:
-  - gocardless_customer_id, gocardless_mandate_id, gocardless_subscription_id
-  - status, optional cached enrollmentCount
-- Apply changes from next charge date (simple). For proration, create oneâ€‘off Payments.
-
-## Project Status (Summary)
-
-- DB is clean of legacy test data. Normalized model is live: `children` collection + `enrollments` with `childId` (unique by `{ userId, childId, classId }`).
-- Admin â†’ Users modal: edit profile details and perâ€‘child enrollments (change/add/remove) with capacity display and enforcement.
-- Teacher register: weekly (locked to class weekday), mark/unmark only for current/past weeks; perâ€‘child attendance via enrollments.
-- API returns `children[]`, `enrollments[]` (with class + child), `payments[]`, and `enrollmentCount` for admin tools.
-- Authorization checks in admin/teacher endpoints are consistent; success redirect is readâ€‘only (webhook is authoritative).
-
-## Next Steps
-
-- Add minimal Admin â€œAdd Childâ€ UI and perâ€‘child views in member dashboard.
-- Integrate GoCardless: redirect flow (mandate), create subscription with amount computed from `enrollmentCount`, and webhook processing.
-- Optional: tiered pricing rules and oneâ€‘off payment handling for midâ€‘cycle changes.
-
-## 9) Migration From Stripe â†’ GoCardless (Checklist)
-
-Prereqs
-
-- GoCardless sandbox account + access token
-- Webhook endpoint URL reachable from GC (ngrok in dev)
-- Decide pricing rule (linear Â£30 Ã— count, or tiered map)
-- Policy for proration (recommend: apply changes next charge date; optionally create oneâ€‘off Payments)
-
-Environment variables (proposed)
-
-- `GOCARDLESS_ACCESS_TOKEN`
-- `GOCARDLESS_WEBHOOK_SECRET`
-- `GOCARDLESS_REDIRECT_SUCCESS_URL` (where GC returns to after mandate setup)
-- `GOCARDLESS_REDIRECT_CANCEL_URL`
-- Optional: `GOCARDLESS_CURRENCY` default `GBP`
-
-Data model additions (users.membership)
-
-- `gocardless_customer_id`
-- `gocardless_mandate_id`
-- `gocardless_subscription_id`
-- Optional cache: `enrollmentCount`, `nextChargeDate`
-
-API changes (high level)
-
-- Replace `/api/checkout`:
-  - Start GC Redirect Flow â†’ return `redirect_url`
-  - On return, exchange for customer/mandate and create subscription with `amount = priceFor(enrollmentCount)` and monthly interval
-  - Persist GC IDs on user and write `membershipHistory`
-- Add `/api/webhook/gocardless` handler:
-  - Handle `payment_confirmed/payment_created`, `subscription_activated/updated/cancelled`, `mandate_*` failures
-  - Write `payments` with `{ provider: 'GoCardless', payment_id, mandate_id, amount, currency, createdAt }`
-  - Update `users.membership.status` and `lastPaymentDate` as needed
-  - Use existing `processedEvents` idempotency guard
-
-Enrollment-driven updates
-
-- After any enrollment add/remove:
-  - Recompute active `enrollmentCount`
-  - Compute new amount and update GC subscription amount (effective next collection)
-  - Optionally create oneâ€‘off Payment for proration
-  - Store cached `membership.enrollmentCount`
-
-UI notes
-
-- Member dashboard: show enrollment count and next charge amount/date (if cached)
-- Admin modal already shows/edit enrollments; after change, optionally trigger a billing sync endpoint
-
-Cutover steps
-
-1. Deploy webhook endpoint for GC and verify signature locally
-2. Implement redirect flow + subscription creation in sandbox
-3. Switch `/api/checkout` to GC path; keep Stripe path disabled
-4. Update README billing notes and ops runbook
-5. QA: mandate created â†’ subscription created â†’ payment confirmed webhook â†’ payments row written â†’ membership active
-6. Optional migration: keep Stripe payments as readâ€‘only history; do not mix providers for the same user
-
-Ops/failure handling
-
-- Mandate failure or bank details changed â†’ pause membership and notify admin
-- Payment failure â†’ keep membership pending and surface in admin payments
-- Retries: GC will retry; webhook handler must be idempotent
+Purpose: Provide an accurate, current picture of product flows, data shapes, and implementation guardrails. Public self‑sign‑up is disabled. Accounts originate from trial conversions managed by staff.
 
 ---
 
-## GoCardless: Current Implementation (2025‑11)
+## Product Flows
 
-- Redirect Flow → Mandate → Subscription
-  - Creates a monthly subscription billed on the 1st of each month.
-  - `start_date` is set to the first of the next month; GC automatically shifts weekends/bank holidays to the next working day.
-  - Amount derived from `enrollmentCount` using a simple tier (1=£30, 2=£55, ≥3=£75 cap).
-- Pro‑rata one‑off payment
-  - Computation: `perClass = ceil(monthly/4)` × `classesLeftThisMonth` (weekday‑based from the latest converted trial), capped at the monthly fee.
-  - Created via GC Payments API with ≤3 metadata keys: `{ email, reason: 'prorata', month: 'YYYY‑MM' }`. Omit `reference` in sandbox.
-  - Seed a `payments` row with `status: 'pending_submission'` and record `payment_id` if returned; webhook confirms later.
-- Idempotency
+- Trials
+  - Parent books a trial (parent + child + class).
+  - Staff sets status: pending → attended → converted.
+  - On conversion, a customer account is created and the parent logs in.
+
+- Membership (GoCardless)
+  - Parent selects “Become a Member” → GC redirect flow creates customer + mandate → subscription created for the 1st of next month.
+  - Amount derives from active enrolments (e.g., 1=£30, 2=£55, 3=£75 cap).
+  - Pro‑rata one‑off payment optionally created for the remainder of the current month.
+  - Webhooks activate membership and record payments.
+
+- Dashboard
+  - Shows parent/child cards, enrolled classes, Upcoming Direct Debit, and Recent Payments.
+
+---
+
+## Latest Changes (Nov 2025)
+
+- GoCardless hardening
+  - Pro‑rata one‑off amounts stored/displayed with two decimals.
+  - Idempotency keys include `redirect_flow_id` to prevent duplicate creation during reactivation.
+  - Implemented in: `src/app/api/checkout/complete/route.js`.
+
+- Webhooks upsert by `payment_id`
+  - `payments.confirmed` trims the sandbox’s stray leading space in IDs, enriches when available, and upserts the `payments` document by `payment_id`; sets `status`/`payment_status` and `paidAt`.
+  - `payments.failed` prepared for the same “upsert by payment_id” treatment so pending rows flip to failed instead of inserting duplicates.
+  - Implemented in: `src/app/api/webhook/gocardless/route.ts`.
+
+- Auto‑enrol fallback on activation
+  - When no converted trial exists (reactivation), fall back to `previousCustomers.snapshot` to enrol the child.
+  - Implemented in: webhook handler; see above route.
+
+- Restore behavior
+  - Restoring a user no longer removes `previousCustomers.snapshot` (preserved for reactivation logic).
+  - Implemented in: `src/app/api/admin/users/restore/route.ts`.
+
+- Upcoming Direct Debit card
+  - API returns `nextPayment` (first of next month, amount with two decimals, status “scheduled”).
+  - Implemented in: `src/app/api/account/overview/route.ts` and UI `src/app/dashboard/page.js`.
+
+- Member Trials (existing member can try a new class for free)
+  - Search members: `GET /api/admin/members/search` → `src/app/api/admin/members/search/route.ts`.
+  - Create member trial: `POST /api/admin/trials/from-member` → `src/app/api/admin/trials/from-member/route.ts`.
+  - List trials (includes member trials): `GET /api/admin/trials` → `src/app/api/admin/trials/route.js`.
+  - Convert member trial: `POST /api/admin/trials/update-status` → `src/app/api/admin/trials/update-status/route.ts`.
+  - Optional reprice: `POST /api/admin/billing/subscription/reprice` → `src/app/api/admin/billing/subscription/reprice/route.ts`.
+  - Admin UI: `src/app/admin/trials/page.js` (modal for “Add Member Trial”).
+
+---
+
+## Collections (MongoDB)
+
+- `classes` { name, style, day, time, capacity, instructor }
+- `trialBookings` { parent{}, child{}, classId, status, trialDate?, isMemberTrial?, createdAt, updatedAt }
+- `users` { email, password, role, phone, parent{}, address{}, membership{}, flags{}, previousCustomers?.snapshot }
+- `children` { userId, firstName, lastName, dob?, medical?, emergencyContact?, createdAt, updatedAt }
+- `enrollments` { userId, childId, classId, status, attendedDates[], createdAt }
+  - Indexes: unique `{ userId:1, childId:1, classId:1 }`, plus `{ userId:1 }`, `{ classId:1 }`, `{ childId:1 }`.
+- `payments` { email, amount (pounds), currency, payment_status, payment_id?, mandate_id?, createdAt, paidAt? }
+- `membershipHistory` { type, notes, timestamps }
+- `processedEvents` { eventId, createdAt } (TTL for webhook idempotency)
+
+Recommended index (duplicate‑prevention for pending member trials):
+
+```
+trialBookings.createIndex(
+  { childId: 1, classId: 1, status: 1 },
+  { unique: true, partialFilterExpression: { status: "pending" } }
+)
+```
+
+---
+
+## API Surface (selected)
+
+- Account overview: `GET /api/account/overview` → parent/child/contact, membership, enrolments, payments, flags, `nextPayment`.
+- Customers (admin): `GET /api/customers/[email]` → user, enrolments, payments, counts.
+- Trials (admin): list, update status, update trial date, member‑trial create/convert.
+- Members search (admin): search by name/email and list children for trial selection.
+- Billing (admin): subscription reprice endpoint.
+
+---
+
+## GoCardless Notes
+
+- Sandbox specifics
+  - No custom `payments.reference`.
+  - Up to 3 metadata keys (e.g., `email`, `reason`, `month`).
+  - Expect `409/422` if the same redirect flow is completed twice during dev; first success wins.
+- Idempotency keys
   - Subscription: `sub_create:<userId>:<redirect_flow_id>`
   - Pro‑rata: `prorata:<userId>:<YYYY‑MM>:<redirect_flow_id>`
-- Webhook `/api/webhook/gocardless`
-  - HMAC verified; idempotent via `processedEvents`.
-  - `subscriptions.created|activated`: sets `role=member`, `membership.status=active`, stores GC IDs, sets `flags.memberWelcomePending=true`, auto‑enrols child from latest converted trial (capacity checked).
-  - `payments.confirmed`: trims `payment_id`, enriches via GC (amount/currency/metadata), falls back to seeded payment for `email` if needed, and upserts the `payments` row by `payment_id` → sets `status=confirmed`, `payment_status=confirmed`, `paidAt`, `updatedAt`, and updates `users.membership.lastPaymentDate`.
-  - `payments.failed`: currently marks `membership.status=pending` (optional: upsert pending row to `failed`).
-- UX smoothing
-  - Success page performs a short confirm loop to avoid landing on a stale “customer” view, then hard redirects to `/dashboard?firstTime=1`.
-  - Dashboard does a one‑time quick re‑fetch when `firstTime=1` so users don’t need to manually refresh.
-- UI status
-  - Dashboard and Admin use normalized status `payment_status ?? status` so “pending submission” vs “confirmed” display correctly.
-- Sandbox specifics
-  - No custom `payments.reference`; max 3 metadata keys.
-  - Occasional `409/422` on redirect flow completion (double‑submit in dev) — first success is sufficient.
-  - Atlas `collMod` for TTL index may be denied; we log and continue (non‑fatal).
+- TTL index warning
+  - Atlas may deny `collMod` when adjusting TTL on `processedEvents`. We log and continue (non‑fatal).
+
+Environment:
+
+```
+GOCARDLESS_ENV=sandbox            # or live
+GOCARDLESS_ACCESS_TOKEN=...
+GOCARDLESS_WEBHOOK_SECRET=...
+GOCARDLESS_CURRENCY=GBP
+```
+
+---
+
+## Developer Guidance
+
+- Use `getDb()`; keep route handlers lean and idempotent; return `NextResponse.json()`.
+- Keep logs ASCII for Windows compatibility; avoid leaking secrets.
+- Prefer server‑side upserts and unique indexes to enforce invariants.
+
+---
+
+## Testing Checklist
+
+- Reactivation: archive → restore → run GC flow; verify pro‑rata pending→confirmed, auto‑enrol, dashboard updates.
+- Payments: webhook confirms `payments.confirmed` upsert; amounts display with two decimals in admin/member views.
+- Member Trials: create from an existing member → convert → new enrolment appears; optional reprice adjusts subscription amount for next month.
+- Upcoming DD: `/api/account/overview` returns `nextPayment`; dashboard card displays date/amount/status correctly.
+

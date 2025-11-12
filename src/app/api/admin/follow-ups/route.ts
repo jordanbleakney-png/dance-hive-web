@@ -31,10 +31,33 @@ export async function GET(req: Request) {
       .project({ parent: 1, child: 1, parentName: 1, childName: 1, email: 1, phone: 1, createdAt: 1, attendedAt: 1, absentAt: 1, trialDate: 1, status: 1, classId: 1, contacted: 1, contactedAt: 1, notes: 1, notesUpdatedAt: 1 })
       .toArray();
 
-    // Exclude archived users and already-active members
+    // Build class name map for the trials' classIds
+    let classNameById = new Map<string, string>();
+    try {
+      const rawIds = Array.from(
+        new Set(
+          trials
+            .map((t: any) => (t?.classId != null ? String(t.classId) : null))
+            .filter((v: any) => !!v)
+        )
+      );
+      const objIds: any[] = [];
+      for (const s of rawIds) {
+        try { objIds.push(new ObjectId(String(s))); } catch {}
+      }
+      if (objIds.length) {
+        const classes = await db
+          .collection('classes')
+          .find({ _id: { $in: objIds as any } }, { projection: { name: 1 } } as any)
+          .toArray();
+        classes.forEach((c: any) => {
+          classNameById.set(String(c._id), String(c?.name || ''));
+        });
+      }
+    } catch {}
+
+    // Exclude already-active members only. Previous customers who re-booked should be included.
     const emails = Array.from(new Set(trials.map((t: any) => String(t.email || '').toLowerCase()).filter(Boolean)));
-    const prevEmailsArr = await db.collection('previousCustomers').find({ email: { $in: emails } }).project({ email: 1 } as any).toArray();
-    const prevEmails = new Set(prevEmailsArr.map((d:any)=> String(d.email || '').toLowerCase()));
     let memberEmails = new Set<string>();
     if (emails.length) {
       const users = await db.collection('users').find({ email: { $in: emails } }).project({ email: 1, role: 1, membership: 1 } as any).toArray();
@@ -48,7 +71,7 @@ export async function GET(req: Request) {
     const rows = trials
       .filter((t: any) => {
         const emailKey = String(t.email || '').toLowerCase();
-        return !prevEmails.has(emailKey) && !memberEmails.has(emailKey);
+        return !memberEmails.has(emailKey);
       })
       .map((t: any) => ({
         _id: t._id,
@@ -56,6 +79,8 @@ export async function GET(req: Request) {
         childFullName: [t?.child?.firstName, t?.child?.lastName].filter(Boolean).join(' ') || t.childName || '',
         phone: t.phone || '',
         email: t.email || '',
+        classId: t.classId || null,
+        className: classNameById.get(String(t.classId || '')) || String(t.className || ''),
         trialDate: t.trialDate || null,
         attendedAt: t.attendedAt || null,
         absentAt: t.absentAt || null,

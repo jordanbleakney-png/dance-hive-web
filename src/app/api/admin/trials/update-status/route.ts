@@ -28,12 +28,75 @@ export async function PATCH(req: Request) {
       return NextResponse.json({ error: "Trial not found" }, { status: 404 });
     }
 
+    const now = new Date();
+    const setUpdate: any = { status, updatedAt: now };
+    const unsetUpdate: any = {} as any;
+    if (status === "attended") {
+      setUpdate.attendedAt = now;
+      unsetUpdate.absentAt = "";
+    } else if (status === "absent") {
+      setUpdate.absentAt = now;
+      unsetUpdate.attendedAt = "";
+    } else if (status === "pending") {
+      // Reset attendance timestamps when moving back to pending
+      unsetUpdate.attendedAt = "";
+      unsetUpdate.absentAt = "";
+    }
     await db.collection("trialBookings").updateOne(
       { _id: objectId },
-      { $set: { status, updatedAt: new Date() } }
+      { $set: setUpdate, ...(Object.keys(unsetUpdate).length ? { $unset: unsetUpdate } : {}) }
     );
 
     if (status === "converted") {
+      // If this is a member trial, just enroll the child into the class (no user creation)
+      if ((trial as any)?.isMemberTrial) {
+        try {
+          const userId = new ObjectId(String((trial as any).existingUserId));
+          const childId = new ObjectId(String((trial as any).childId));
+          const classId = new ObjectId(String((trial as any).classId));
+
+          const cls = await db.collection("classes").findOne({ _id: classId });
+          if (!cls) return NextResponse.json({ error: "Class not found" }, { status: 404 });
+          const cap = Number((cls as any).capacity || 0);
+          if (cap > 0) {
+            const enrolled = await db.collection("enrollments").countDocuments({ classId, status: "active" });
+            if (enrolled >= cap) {
+              return NextResponse.json({ error: "Class is at capacity" }, { status: 400 });
+            }
+          }
+
+          const payload: any = {
+            userId,
+            childId,
+            classId,
+            status: "active",
+            attendedDates: [],
+            createdAt: new Date(),
+          };
+          await db.collection("enrollments").updateOne(
+            { userId: payload.userId, childId: payload.childId, classId: payload.classId },
+            { $setOnInsert: payload },
+            { upsert: true }
+          );
+
+          try {
+            await db.collection("membershipHistory").insertOne({
+              email: (trial as any)?.email || null,
+              event: "trial_converted_extra_class",
+              classId,
+              childId,
+              provider: "internal",
+              timestamp: new Date(),
+            });
+          } catch {}
+
+          return NextResponse.json({ success: true, status }, { status: 200 });
+        } catch (e) {
+          console.error("[admin/trials:update-status] member-trial convert error", e);
+          return NextResponse.json({ error: "Conversion failed" }, { status: 500 });
+        }
+      }
+
       const split = (full?: string) => {
         if (!full || typeof full !== "string") return { first: "", last: "" };
         const parts = full.trim().split(/\s+/);

@@ -73,11 +73,21 @@ export async function POST(req: Request) {
       );
     }
 
-    await db.collection("trialBookings").insertOne({
+    try {
+      await db.collection("trialBookings").insertOne({
       ...record,
       status: "pending",
       createdAt: new Date(),
-    });
+      });
+    } catch (e: any) {
+      if (e && e.code === 11000) {
+        return NextResponse.json(
+          { success: false, message: "A trial for this email, class and date already exists" },
+          { status: 409 }
+        );
+      }
+      throw e;
+    }
 
     return NextResponse.json(
       { success: true, message: "Trial booking successful!" },

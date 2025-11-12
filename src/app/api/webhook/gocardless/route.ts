@@ -192,6 +192,100 @@ export async function POST(req: Request): Promise<Response> {
       } catch {}
 
       try { console.log("[gc webhook] auto-enrolled child", { email, classId: String(classId) }); } catch {}
+
+      // Mark the converted trial we used as processed so we don't enroll it again
+      try {
+        await db.collection("trialBookings").updateOne(
+          { _id: (trial as any)._id },
+          { $set: { enrolledFromWebhookAt: new Date() } }
+        );
+      } catch {}
+
+      // Enroll any other converted trials for this email that haven't been processed yet
+      try {
+        const others = await db
+          .collection("trialBookings")
+          .find({
+            email,
+            $or: [{ status: "converted" }, { convertedToMember: true }],
+            classId: { $ne: classId },
+            $or_2: [{ enrolledFromWebhookAt: { $exists: false } }, { enrolledFromWebhookAt: null }],
+          } as any)
+          .toArray();
+
+        for (const ot of others) {
+          let otherClassId: ObjectId | null = null;
+          try { otherClassId = new ObjectId(String((ot as any).classId)); } catch { otherClassId = null; }
+          if (!otherClassId) continue;
+
+          const split = (full?: string) => {
+            if (!full || typeof full !== "string") return { first: "", last: "" };
+            const parts = full.trim().split(/\s+/);
+            if (parts.length === 1) return { first: parts[0], last: "" };
+            return { first: parts[0], last: parts.slice(1).join(" ") };
+          };
+          const childFirstName2 = (ot as any)?.child?.firstName || split((ot as any)?.childName).first;
+          const childLastName2 = (ot as any)?.child?.lastName || split((ot as any)?.childName).last;
+
+          let child2 = null as any;
+          if (childFirstName2) {
+            child2 = await db
+              .collection("children")
+              .findOne({ userId: (user as any)._id, firstName: childFirstName2, lastName: childLastName2 });
+          }
+          if (!child2 && (user as any).primaryChildId) {
+            child2 = await db.collection("children").findOne({ _id: new ObjectId(String((user as any).primaryChildId)) });
+          }
+          if (!child2) {
+            const ins2 = await db.collection("children").insertOne({
+              userId: (user as any)._id,
+              firstName: childFirstName2 || "",
+              lastName: childLastName2 || "",
+              dob: null,
+              medical: (user as any)?.medical || "",
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            });
+            child2 = { _id: ins2.insertedId } as any;
+          }
+
+          // Capacity guard
+          const cls2 = await db.collection("classes").findOne({ _id: otherClassId });
+          if (cls2) {
+            const cap2 = Number((cls2 as any).capacity || 0);
+            if (cap2 > 0) {
+              const enrolledCount2 = await db
+                .collection("enrollments")
+                .countDocuments({ classId: otherClassId, status: "active" });
+              if (enrolledCount2 >= cap2) continue;
+            }
+          }
+
+          await db.collection("enrollments").updateOne(
+            { userId: (user as any)._id, childId: (child2 as any)._id, classId: otherClassId },
+            { $setOnInsert: { userId: (user as any)._id, childId: (child2 as any)._id, classId: otherClassId, status: "active", attendedDates: [], createdAt: new Date() } },
+            { upsert: true }
+          );
+
+          try {
+            await db.collection("membershipHistory").insertOne({
+              email,
+              event: "auto_enrolled",
+              classId: otherClassId,
+              childId: (child2 as any)._id,
+              provider: "GoCardless",
+              timestamp: new Date(),
+            });
+          } catch {}
+
+          try {
+            await db.collection("trialBookings").updateOne(
+              { _id: (ot as any)._id },
+              { $set: { enrolledFromWebhookAt: new Date() } }
+            );
+          } catch {}
+        }
+      } catch {}
     } catch (e) {
       console.warn("[gc webhook] auto-enroll failed", e);
     }
@@ -275,6 +369,13 @@ export async function POST(req: Request): Promise<Response> {
                 { $set: { role: "member", "membership.status": "active", "membership.lastPaymentDate": now, "flags.memberWelcomePending": true, updatedAt: now } }
               );
               try { console.log("[gc webhook] payment confirmed -> member", { email, matched: res.matchedCount, modified: res.modifiedCount }); } catch {}
+            } catch {}
+            // Also mark any previousCustomers snapshot as restored so it no longer appears in the list
+            try {
+              await db.collection("previousCustomers").updateOne(
+                { email },
+                { $set: { restoredAt: now, restoredBy: "system:webhook" } }
+              );
             } catch {}
           }
 
@@ -426,6 +527,14 @@ export async function POST(req: Request): Promise<Response> {
 
             // Best-effort auto-enroll the child into the class from the latest converted trial
             await autoEnrollFromLatestConvertedTrial(email);
+
+            // Ensure previousCustomers snapshot is marked restored
+            try {
+              await db.collection("previousCustomers").updateOne(
+                { email },
+                { $set: { restoredAt: new Date(), restoredBy: "system:webhook" } }
+              );
+            } catch {}
           }
           break;
         }

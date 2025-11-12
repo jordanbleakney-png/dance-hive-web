@@ -21,6 +21,25 @@ export async function GET(req: Request) {
       .limit(200)
       .toArray();
 
+    // Safety net: hide entries where a current user exists (e.g. member/customer reactivated via checkout)
+    try {
+      const emails = raw.map((d: any) => String(d?.email || "").toLowerCase());
+      if (emails.length) {
+        const exists = await db
+          .collection("users")
+          .find({ email: { $in: emails } }, { projection: { email: 1 } } as any)
+          .toArray();
+        const existingSet = new Set(
+          exists.map((u: any) => String(u.email || "").toLowerCase())
+        );
+        // Filter out any archived rows that already have an active user
+        for (let i = raw.length - 1; i >= 0; i--) {
+          const e = String(raw[i]?.email || "").toLowerCase();
+          if (existingSet.has(e)) raw.splice(i, 1);
+        }
+      }
+    } catch {}
+
     const items = raw.map((doc: any) => {
       const parent = doc?.snapshot?.user?.parent || {};
       const childrenArr: any[] = Array.isArray(doc?.snapshot?.children) ? doc.snapshot.children : [];

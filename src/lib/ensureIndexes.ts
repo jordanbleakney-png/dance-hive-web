@@ -19,9 +19,36 @@ export async function ensureIndexes() {
     await trials.createIndex({ createdAt: 1 });
     await trials.createIndex({ convertedToMember: 1 });
     await trials.createIndex({ classId: 1, trialDate: 1 });
-    // Optional de-dup prevention per class/date per email (not unique across null trialDate)
+    // Replace earlier uniques; make uniqueness conditional:
+    // - If a trial has a persisted childId, enforce (childId,classId,trialDate)
+    // - If it does not, enforce (email,classId,trialDate)
+    try { await trials.dropIndex({ childId: 1, classId: 1, trialDate: 1 } as any); } catch {}
+    try { await trials.dropIndex({ email: 1, classId: 1, trialDate: 1 } as any); } catch {}
     try {
-      await trials.createIndex({ email: 1, classId: 1, trialDate: 1 }, { unique: true, partialFilterExpression: { trialDate: { $type: "string" } } as any });
+      await trials.createIndex(
+        { childId: 1, classId: 1, trialDate: 1 },
+        { unique: true, partialFilterExpression: { childId: { $exists: true }, trialDate: { $type: "string" } } as any }
+      );
+    } catch {}
+    try {
+      await trials.createIndex(
+        { email: 1, classId: 1, trialDate: 1 },
+        { unique: true, partialFilterExpression: { childId: { $exists: false }, trialDate: { $type: "string" } } as any }
+      );
+    } catch {}
+    // Optional: block duplicate pending trials; scoped per-child if we have childId, otherwise per-email
+    try { await trials.dropIndex({ childId: 1, classId: 1, status: 1 } as any); } catch {}
+    try {
+      await trials.createIndex(
+        { childId: 1, classId: 1, status: 1 },
+        { unique: true, partialFilterExpression: { childId: { $exists: true }, status: "pending" } as any }
+      );
+    } catch {}
+    try {
+      await trials.createIndex(
+        { email: 1, classId: 1, status: 1 },
+        { unique: true, partialFilterExpression: { childId: { $exists: false }, status: "pending" } as any }
+      );
     } catch {}
     console.log("[db] 'trialBookings' indexes verified");
 

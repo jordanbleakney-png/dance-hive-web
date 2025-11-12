@@ -60,7 +60,18 @@ export async function POST(req) {
       if (n >= 3) return 7500;       // £75 cap
       return 3000;
     };
-    const amount = String(priceFor(enrollmentCount));
+    // Count additional classes from converted trials not yet processed
+    let pendingConvertedClassIds = [];
+    try {
+      pendingConvertedClassIds = await db.collection("trialBookings").distinct("classId", {
+        email: String(session.user.email).toLowerCase(),
+        $or: [{ status: "converted" }, { convertedToMember: true }],
+        $or_2: [{ enrolledFromWebhookAt: { $exists: false } }, { enrolledFromWebhookAt: null }],
+      });
+    } catch {}
+    const newClasses = Array.from(new Set((pendingConvertedClassIds || []).map((x) => String(x)).filter(Boolean)));
+    const targetCount = enrollmentCount + newClasses.length;
+    const amount = String(priceFor(targetCount));
 
     // Create a monthly subscription scheduled for the first working day each month
     // GoCardless will automatically move collections that fall on weekends/bank holidays
@@ -110,14 +121,110 @@ export async function POST(req) {
       console.warn("[checkout/complete] Unexpected subscription response", { subscriptionId, subStatus });
     }
 
+    // Multi-class prorata: if multiple converted trials exist, sum per-class prorata
+    try {
+      if (newClasses.length > 0) {
+        const today = new Date();
+        const utcY = today.getUTCFullYear();
+        const utcM = today.getUTCMonth();
+        const start = new Date(Date.UTC(utcY, utcM, today.getUTCDate()));
+        const end = new Date(Date.UTC(utcY, utcM + 1, 0));
+        const dayToIndex = { Sunday:0, Monday:1, Tuesday:2, Wednesday:3, Thursday:4, Friday:5, Saturday:6 };
+
+        const increments = [];
+        for (let i = 1; i <= newClasses.length; i++) {
+          increments.push(priceFor(enrollmentCount + i) - priceFor(enrollmentCount + i - 1));
+        }
+
+        let prorataPence = 0;
+        for (let idx = 0; idx < newClasses.length; idx++) {
+          const cid = newClasses[idx];
+          let classId; try { classId = new ObjectId(String(cid)); } catch { continue; }
+          const cls = await db.collection("classes").findOne({ _id: classId });
+          if (!cls) continue;
+          const weekday = dayToIndex[String(cls.day || "")] ?? null;
+          if (weekday === null) continue;
+          const startDow = start.getUTCDay();
+          let delta = weekday - startDow; if (delta < 0) delta += 7;
+          const firstOcc = new Date(start); firstOcc.setUTCDate(start.getUTCDate() + delta);
+          let classesLeft = 0;
+          for (let d = new Date(firstOcc); d <= end; d.setUTCDate(d.getUTCDate() + 7)) {
+            if (d < start) continue; classesLeft++;
+          }
+          if (classesLeft <= 0) continue;
+          const monthlyInc = Math.max(0, increments[Math.min(idx, increments.length - 1)] || 0);
+          const perClass = Math.ceil(monthlyInc / 4);
+          prorataPence += perClass * classesLeft;
+        }
+        const monthlyCap = priceFor(targetCount);
+        if (prorataPence > monthlyCap) prorataPence = monthlyCap;
+
+        if (prorataPence > 0) {
+          const monthTag = `${utcY}-${String(utcM + 1).padStart(2, '0')}`;
+          const idemp = `prorata:${String(userId)}:${monthTag}`;
+          try {
+            const payResp = await fetch(`${base}/payments`, {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${process.env.GOCARDLESS_ACCESS_TOKEN}`,
+                "GoCardless-Version": "2015-07-06",
+                "Content-Type": "application/json",
+                "Idempotency-Key": `${idemp}:${redirect_flow_id}`,
+              },
+              body: JSON.stringify({
+                payments: {
+                  amount: String(prorataPence),
+                  currency: process.env.GOCARDLESS_CURRENCY || "GBP",
+                  links: { mandate: mandateId },
+                  metadata: { email: session.user.email, reason: "prorata", month: monthTag },
+                },
+              }),
+            });
+            if (!payResp.ok) {
+              const txt = await payResp.text();
+              console.warn("[checkout/complete] Prorata payment create failed:", txt);
+            } else {
+              let createdPaymentId = null;
+              try { const pj = await payResp.json(); createdPaymentId = pj?.payments?.id || null; } catch {}
+              try {
+                await db.collection("payments").insertOne({
+                  email: session.user.email,
+                  amount: parseFloat(String((prorataPence / 100).toFixed(2))),
+                  currency: process.env.GOCARDLESS_CURRENCY || "GBP",
+                  provider: "GoCardless",
+                  payment_id: createdPaymentId,
+                  status: "pending_submission",
+                  createdAt: new Date(),
+                  metadata: { reason: "prorata", month: monthTag },
+                });
+              } catch {}
+              try {
+                await db.collection("membershipHistory").insertOne({
+                  email: session.user.email,
+                  event: "prorata_issued",
+                  amount: parseFloat(String((prorataPence / 100).toFixed(2))),
+                  month: monthTag,
+                  provider: "GoCardless",
+                  timestamp: new Date(),
+                });
+              } catch {}
+            }
+          } catch (e) {
+            console.warn("[checkout/complete] Prorata payment error", e);
+          }
+        }
+      }
+    } catch {}
+
+    // === Pro-rata one-off payment (per-class model) ===
     // === Pro‑rata one‑off payment (per‑class model) ===
     // Compute number of classes left this month for the converted trial, then
     // charge perClass (monthly/4) * classesLeft as a one‑off payment.
     try {
-      const trialForEmail = await db.collection("trialBookings").findOne(
+      const trialForEmail = (newClasses.length === 0) ? await db.collection("trialBookings").findOne(
         { email: session.user.email, status: "converted" },
         { sort: { updatedAt: -1, createdAt: -1 } }
-      );
+      ) : null;
       if (trialForEmail && trialForEmail.classId) {
         const classId = new ObjectId(String(trialForEmail.classId));
         const cls = await db.collection("classes").findOne({ _id: classId });
@@ -320,82 +427,86 @@ export async function POST(req) {
       console.warn("[checkout/complete] Pro‑rata calculation skipped", e);
     }
 
-    // Helper: auto-enroll from most recent converted trial for this user
+    // Helper: auto-enroll from all converted trials for this user (best-effort)
     const autoEnroll = async (email) => {
       try {
         const user = await db.collection("users").findOne({ email });
         if (!user) return;
-        const trial = await db.collection("trialBookings").findOne(
-          { email, status: "converted" },
-          { sort: { updatedAt: -1, createdAt: -1 } }
-        );
-        if (!trial || !trial.classId) return;
+        const trials = await db
+          .collection("trialBookings")
+          .find({ email, status: "converted" })
+          .sort({ updatedAt: -1, createdAt: -1 })
+          .toArray();
+        if (!trials || trials.length === 0) return;
 
-        const classId = new ObjectId(String(trial.classId));
         const split = (full) => {
           if (!full || typeof full !== "string") return { first: "", last: "" };
           const parts = full.trim().split(/\s+/);
           if (parts.length === 1) return { first: parts[0], last: "" };
           return { first: parts[0], last: parts.slice(1).join(" ") };
         };
-        const childFirstName = trial?.child?.firstName || split(trial?.childName).first;
-        const childLastName = trial?.child?.lastName || split(trial?.childName).last;
+        for (const trial of trials) {
+          if (!trial?.classId) continue;
+          const classId = new ObjectId(String(trial.classId));
+          const childFirstName = trial?.child?.firstName || split(trial?.childName).first;
+          const childLastName = trial?.child?.lastName || split(trial?.childName).last;
 
-        let child = null;
-        if (childFirstName) {
-          child = await db
-            .collection("children")
-            .findOne({ userId: user._id, firstName: childFirstName, lastName: childLastName });
-        }
-        if (!child && user.primaryChildId) {
-          child = await db.collection("children").findOne({ _id: new ObjectId(String(user.primaryChildId)) });
-        }
-        if (!child) {
-          const ins = await db.collection("children").insertOne({
+          let child = null;
+          if (childFirstName) {
+            child = await db
+              .collection("children")
+              .findOne({ userId: user._id, firstName: childFirstName, lastName: childLastName });
+          }
+          if (!child && user.primaryChildId) {
+            child = await db.collection("children").findOne({ _id: new ObjectId(String(user.primaryChildId)) });
+          }
+          if (!child) {
+            const ins = await db.collection("children").insertOne({
+              userId: user._id,
+              firstName: childFirstName || "",
+              lastName: childLastName || "",
+              dob: null,
+              medical: user?.medical || "",
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            });
+            child = { _id: ins.insertedId };
+            await db
+              .collection("users")
+              .updateOne({ _id: user._id, primaryChildId: { $exists: false } }, { $set: { primaryChildId: child._id } });
+          }
+
+          const cls = await db.collection("classes").findOne({ _id: classId });
+          if (!cls) continue;
+          const cap = Number(cls.capacity || 0);
+          if (cap > 0) {
+            const enrolled = await db.collection("enrollments").countDocuments({ classId, status: "active" });
+            if (enrolled >= cap) continue;
+          }
+          const payload = {
             userId: user._id,
-            firstName: childFirstName || "",
-            lastName: childLastName || "",
-            dob: null,
-            medical: user?.medical || "",
-            createdAt: new Date(),
-            updatedAt: new Date(),
-          });
-          child = { _id: ins.insertedId };
-          await db
-            .collection("users")
-            .updateOne({ _id: user._id, primaryChildId: { $exists: false } }, { $set: { primaryChildId: child._id } });
-        }
-
-        const cls = await db.collection("classes").findOne({ _id: classId });
-        if (!cls) return;
-        const cap = Number(cls.capacity || 0);
-        if (cap > 0) {
-          const enrolled = await db.collection("enrollments").countDocuments({ classId, status: "active" });
-          if (enrolled >= cap) return;
-        }
-        const payload = {
-          userId: user._id,
-          childId: child._id,
-          classId,
-          status: "active",
-          attendedDates: [],
-          createdAt: new Date(),
-        };
-        await db.collection("enrollments").updateOne(
-          { userId: payload.userId, childId: payload.childId, classId: payload.classId },
-          { $setOnInsert: payload },
-          { upsert: true }
-        );
-        try {
-          await db.collection("membershipHistory").insertOne({
-            email,
-            event: "auto_enrolled",
-            classId,
             childId: child._id,
-            provider: "GoCardless",
-            timestamp: new Date(),
-          });
-        } catch {}
+            classId,
+            status: "active",
+            attendedDates: [],
+            createdAt: new Date(),
+          };
+          await db.collection("enrollments").updateOne(
+            { userId: payload.userId, childId: payload.childId, classId: payload.classId },
+            { $setOnInsert: payload },
+            { upsert: true }
+          );
+          try {
+            await db.collection("membershipHistory").insertOne({
+              email,
+              event: "auto_enrolled",
+              classId,
+              childId: child._id,
+              provider: "GoCardless",
+              timestamp: new Date(),
+            });
+          } catch {}
+        }
       } catch {}
     };
 
